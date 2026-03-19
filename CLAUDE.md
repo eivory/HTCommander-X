@@ -55,7 +55,7 @@ All radio protocol logic, data handlers, codecs, and parsers. Key subsystems:
 
 ### HTCommander.Desktop (net9.0) — Avalonia UI
 
-10 tab controls + 40 dialogs + Mapsui map + left-side radio info panel with radio image overlay. Platform auto-detected at startup via reflection in `Program.cs`. Conditional project references load Windows or Linux platform assembly. Dark theme (`RequestedThemeVariant="Dark"` in App.axaml). Menu bar (File/Settings/View/About), toolbar, and blue status bar. Image assets in `Assets/` are auto-included as `AvaloniaResource` via csproj ItemGroup. Radio panel shows device image with screen overlay (VFO frequencies, signal), plus VFO cards, RSSI/TX bars, status grid, and channel list.
+10 tab controls + 40 dialogs + Mapsui map + left-side radio info panel with radio image overlay. Platform auto-detected at startup via reflection in `Program.cs`. Conditional project references load Windows or Linux platform assembly. Dark theme (`RequestedThemeVariant="Dark"` in App.axaml). Menu bar (File/Radio/View/Help), toolbar, and blue status bar. Radio menu has Dual Watch, Scan, GPS, Audio toggles, Audio Controls dialog, and channel Import/Export — all auto-enable/disable on radio connect/disconnect. Image assets in `Assets/` are auto-included as `AvaloniaResource` via csproj ItemGroup. Radio panel shows device image with screen overlay (VFO frequencies, signal), plus VFO cards, RSSI/TX bars, status grid, and double-click-to-edit channel list.
 
 ### src/ (net9.0-windows) — Original WinForms app
 
@@ -114,7 +114,10 @@ RFCOMM channel numbers vary by radio model and even between connections (VR-N76 
 - Avalonia dialogs use `Confirmed` bool property pattern for OK/Cancel results
 - Avalonia `ComboBox` has no `.Text` property — use `AutoCompleteBox` for editable text+dropdown combos, or `SelectedItem?.ToString()` for read-only combos
 - SSTV imaging uses SkiaSharp (`SKBitmap`), not System.Drawing. WinForms bridge: `SkiaBitmapConverter`
-- Avalonia Desktop uses **dark theme** (`RequestedThemeVariant="Dark"`) — tab headers use `#2D2D30`, text areas use `#1E1E1E`/`#D4D4D4`. Never use `Silver`, `LightGray`, or `#F0F0F0` backgrounds
+- Avalonia Desktop uses **dark theme** (`RequestedThemeVariant="Dark"`) — tab headers use `#2D2D30`, text areas use `#1E1E1E`/`#D4D4D4`, GridSplitters use `#444`, card backgrounds use `#2D2D30`. Never use `Silver`, `LightGray`, or `#F0F0F0` backgrounds
+- Radio audio controls: `SetVolumeLevel` (int 0-15, hardware), `SetSquelchLevel` (int 0-9), `SetOutputVolume` (int 0-100, software), `SetAudio` (bool, streaming toggle), `SetMute` (bool). Radio reports back via `Volume` and `AudioState` events
+- Voice transmit modes dispatch to device 1: `Chat`, `Speak`, `Morse` (text commands); DTMF generates PCM locally via `DmtfEngine` and dispatches `TransmitVoicePCM` to radio device
+- Map tab uses Mapsui 5.0 with `WritableLayer` + `PointFeature` + `LabelStyle` for APRS station markers. APRS positions from `AprsPacket.Position.CoordinateSet.Latitude/Longitude.Value`
 - Settings are stored as int 0/1 for booleans that need cross-platform compat (e.g., `AllowTransmit`, `WebServerEnabled`), use `DataBroker.GetValue<int>(0, key, 0) == 1` to read
 
 ## Repository Structure
