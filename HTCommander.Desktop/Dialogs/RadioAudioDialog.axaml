@@ -1,32 +1,64 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         x:Class="HTCommander.Desktop.Dialogs.RadioAudioDialog"
-        Title="Radio Audio Settings"
-        Width="400" Height="280"
+        Title="Audio Controls"
+        Width="420" Height="400"
         CanResize="False"
         WindowStartupLocation="CenterOwner">
-    <DockPanel Margin="12">
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
-            <Button Content="OK" Click="OkButton_Click" Padding="16,6" />
-            <Button Content="Close" Click="CloseButton_Click" Padding="16,6" />
-        </StackPanel>
+    <DockPanel Margin="16">
+        <Button DockPanel.Dock="Bottom" Content="Close" Click="CloseButton_Click"
+                HorizontalAlignment="Right" Padding="16,6" Margin="0,12,0,0" />
 
-        <StackPanel Spacing="12">
-            <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto,Auto">
-                <TextBlock Grid.Row="0" Grid.Column="0" Text="Output Device:" VerticalAlignment="Center" />
-                <ComboBox Name="OutputDeviceBox" Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch" />
+        <StackPanel Spacing="16">
+            <!-- Audio streaming toggle -->
+            <Border Background="#2D2D30" Padding="12" CornerRadius="4">
+                <StackPanel Spacing="8">
+                    <TextBlock Text="Audio Streaming" FontWeight="SemiBold" FontSize="14" />
+                    <CheckBox Name="AudioEnabledCheck" Content="Enable Audio"
+                              Click="AudioEnabled_Click" />
+                    <TextBlock Name="AudioStatusText" Text="" Foreground="#888" FontSize="11" />
+                </StackPanel>
+            </Border>
 
-                <TextBlock Grid.Row="1" Grid.Column="0" Text="Volume:" VerticalAlignment="Center" Margin="0,12,0,0" />
-                <Slider Name="VolumeSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="100" Value="50"
-                        TickFrequency="1" IsSnapToTickEnabled="True" Margin="0,12,0,0" />
+            <!-- Radio volume (hardware 0-15) -->
+            <Border Background="#2D2D30" Padding="12" CornerRadius="4">
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="Radio Volume" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock Name="VolumeValueText" Grid.Column="1" Text="0" Foreground="#888" />
+                    </Grid>
+                    <Slider Name="VolumeSlider" Minimum="0" Maximum="15"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            ValueChanged="VolumeSlider_Changed" />
+                </StackPanel>
+            </Border>
 
-                <TextBlock Grid.Row="2" Grid.Column="0" Text="Mute:" VerticalAlignment="Center" Margin="0,12,0,0" />
-                <CheckBox Name="MuteCheckBox" Grid.Row="2" Grid.Column="1" Margin="0,12,0,0" />
+            <!-- Squelch (0-9) -->
+            <Border Background="#2D2D30" Padding="12" CornerRadius="4">
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="Squelch Level" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock Name="SquelchValueText" Grid.Column="1" Text="0" Foreground="#888" />
+                    </Grid>
+                    <Slider Name="SquelchSlider" Minimum="0" Maximum="9"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            ValueChanged="SquelchSlider_Changed" />
+                </StackPanel>
+            </Border>
 
-                <TextBlock Grid.Row="3" Grid.Column="0" Text="Status:" VerticalAlignment="Center" Margin="0,12,0,0" />
-                <TextBlock Name="StatusText" Grid.Row="3" Grid.Column="1" Text="Ready" VerticalAlignment="Center" Margin="0,12,0,0" />
-            </Grid>
+            <!-- Software output volume (0-100) -->
+            <Border Background="#2D2D30" Padding="12" CornerRadius="4">
+                <StackPanel Spacing="6">
+                    <Grid ColumnDefinitions="*,Auto">
+                        <TextBlock Text="Output Volume" FontWeight="SemiBold" FontSize="14" />
+                        <TextBlock Name="OutputVolumeText" Grid.Column="1" Text="100%" Foreground="#888" />
+                    </Grid>
+                    <Slider Name="OutputVolumeSlider" Minimum="0" Maximum="100"
+                            TickFrequency="1" IsSnapToTickEnabled="True"
+                            ValueChanged="OutputVolumeSlider_Changed" />
+                    <CheckBox Name="MuteCheck" Content="Mute" Click="Mute_Click" />
+                </StackPanel>
+            </Border>
         </StackPanel>
     </DockPanel>
 </Window>

@@ -105,6 +105,7 @@ namespace HTCommander.Desktop
                         MenuScan.IsEnabled = true;
                         MenuGpsEnabled.IsEnabled = true;
                         MenuAudioEnabled.IsEnabled = true;
+                        MenuAudioControls.IsEnabled = true;
                         activeDeviceId = deviceId;
                         if (RadioPanelCheck.IsChecked == true) RadioPanel.IsVisible = true;
                         RadioStateText.Text = "Connected";
@@ -130,6 +131,7 @@ namespace HTCommander.Desktop
                         MenuScan.IsEnabled = false;
                         MenuGpsEnabled.IsEnabled = false;
                         MenuAudioEnabled.IsEnabled = false;
+                        MenuAudioControls.IsEnabled = false;
                         BatteryStatusText.Text = "";
                         if (deviceId == activeDeviceId)
                         {
@@ -515,6 +517,13 @@ namespace HTCommander.Desktop
             bool currently = DataBroker.GetValue<bool>(activeDeviceId, "AudioState", false);
             DataBroker.Dispatch(activeDeviceId, "SetAudio", !currently, store: false);
             AudioEnabledCheck.IsChecked = !currently;
+        }
+
+        private async void MenuAudioControls_Click(object sender, RoutedEventArgs e)
+        {
+            if (activeDeviceId < 0) return;
+            var dialog = new Dialogs.RadioAudioDialog(activeDeviceId);
+            await dialog.ShowDialog(this);
         }
 
         private async void MenuExportChannels_Click(object sender, RoutedEventArgs e)

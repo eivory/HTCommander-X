@@ -38,6 +38,7 @@
                         <CheckBox Name="AudioEnabledCheck" BorderThickness="0" IsHitTestVisible="False" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Name="MenuAudioControls" Header="Audio _Controls..." Click="MenuAudioControls_Click" IsEnabled="False" />
                 <Separator />
                 <MenuItem Name="MenuExportChannels" Header="_Export Channels..." Click="MenuExportChannels_Click" IsEnabled="False" />
                 <MenuItem Name="MenuImportChannels" Header="_Import Channels..." Click="MenuImportChannels_Click" />
