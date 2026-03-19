@@ -55,7 +55,7 @@ All radio protocol logic, data handlers, codecs, and parsers. Key subsystems:
 
 ### HTCommander.Desktop (net9.0) — Avalonia UI
 
-10 tab controls + 39 dialogs + Mapsui map + left-side radio info panel. Platform auto-detected at startup via reflection in `Program.cs`. Conditional project references load Windows or Linux platform assembly. Radio info panel shows VFO A/B frequencies, RSSI, battery, GPS, channels.
+10 tab controls + 40 dialogs + Mapsui map + left-side radio info panel with radio image overlay. Platform auto-detected at startup via reflection in `Program.cs`. Conditional project references load Windows or Linux platform assembly. Dark theme (`RequestedThemeVariant="Dark"` in App.axaml). Menu bar (File/Settings/View/About), toolbar, and blue status bar. Image assets in `Assets/` are auto-included as `AvaloniaResource` via csproj ItemGroup. Radio panel shows device image with screen overlay (VFO frequencies, signal), plus VFO cards, RSSI/TX bars, status grid, and channel list.
 
 ### src/ (net9.0-windows) — Original WinForms app
 
@@ -64,7 +64,7 @@ Still builds and runs on Windows. References Core. Files moved to Core are exclu
 ## Key Patterns
 
 ### DataBroker event flow
-Components communicate via `DataBroker.Dispatch(deviceId, name, data)` and `broker.Subscribe(deviceId, name, callback)`. Device 0 = global settings (persisted to ISettingsStore). Device 1 = app-level events. Device 100+ = connected radios. All UI callbacks are marshalled via `SynchronizationContext`.
+Components communicate via `DataBroker.Dispatch(deviceId, name, data)` and `broker.Subscribe(deviceId, name, callback)`. Device 0 = global settings (auto-persisted to ISettingsStore — int/string/bool written directly, complex types JSON-serialized with `~~JSON:{type}:{json}` prefix). Device 1 = app-level events. Device 100+ = connected radios. All UI callbacks are marshalled via `SynchronizationContext`. Settings dialog reads/writes via `DataBroker.GetValue<T>(0, name, default)` and `DataBroker.Dispatch(0, name, value)`.
 
 ### Radio connection lifecycle
 1. `IPlatformServices.CreateRadioBluetooth(IRadioHost)` creates transport
@@ -105,7 +105,8 @@ RFCOMM channel numbers vary by radio model and even between connections (VR-N76 
 - `Utils` is a **partial class** — cross-platform methods in Core, WinForms-specific (SetDoubleBuffered, SendMessage) in src/
 - Avalonia dialogs use `Confirmed` bool property pattern for OK/Cancel results
 - SSTV imaging uses SkiaSharp (`SKBitmap`), not System.Drawing. WinForms bridge: `SkiaBitmapConverter`
-- Avalonia Desktop uses dark theme — UI elements should use dark backgrounds with light text
+- Avalonia Desktop uses **dark theme** (`RequestedThemeVariant="Dark"`) — tab headers use `#2D2D30`, text areas use `#1E1E1E`/`#D4D4D4`. Never use `Silver`, `LightGray`, or `#F0F0F0` backgrounds
+- Settings are stored as int 0/1 for booleans that need cross-platform compat (e.g., `AllowTransmit`, `WebServerEnabled`), use `DataBroker.GetValue<int>(0, key, 0) == 1` to read
 
 ## Repository Structure
 

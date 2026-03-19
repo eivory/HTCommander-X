@@ -4,14 +4,16 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="Terminal" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Terminal" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="ConnectionStatus" Text="Disconnected"
+                               VerticalAlignment="Center" Foreground="#888" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
-                    <TextBlock Name="ConnectionStatus" Text="Disconnected"
-                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox Name="StationCombo" Width="140" />
                     <Button Name="ConnectButton" Content="Connect"
-                            Click="ConnectButton_Click" Padding="8,2" />
+                            Click="ConnectButton_Click" Padding="8,2" IsEnabled="False" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -23,7 +25,7 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <TextBox Name="InputBox" Grid.Column="0" Watermark="Type message..."
-                     KeyDown="InputBox_KeyDown" />
+                     KeyDown="InputBox_KeyDown" IsEnabled="False" />
             <Button Name="SendButton" Grid.Column="1" Content="Send"
                     Click="SendButton_Click" Padding="12,2" Margin="4,0,0,0"
                     IsEnabled="False" />

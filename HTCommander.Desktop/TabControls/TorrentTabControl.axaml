@@ -4,13 +4,15 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="Torrent" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Torrent" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="TorrentStatus" Text="Inactive"
+                               VerticalAlignment="Center" Foreground="#888" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
-                    <CheckBox Name="ShowDetailsCheck" Content="Details" />
                     <Button Name="ActivateButton" Content="Activate"
-                            Click="ActivateButton_Click" Padding="8,2" />
+                            Click="ActivateButton_Click" Padding="8,2" IsEnabled="False" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -18,10 +20,11 @@
         <DataGrid Name="TorrentGrid" AutoGenerateColumns="False"
                   IsReadOnly="True" CanUserSortColumns="True">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="File" Width="*" />
-                <DataGridTextColumn Header="Mode" Width="100" />
-                <DataGridTextColumn Header="Description" Width="200" />
-                <DataGridTextColumn Header="Status" Width="100" />
+                <DataGridTextColumn Header="File" Width="*" Binding="{Binding FileName}" />
+                <DataGridTextColumn Header="Source" Width="100" Binding="{Binding Source}" />
+                <DataGridTextColumn Header="Mode" Width="80" Binding="{Binding Mode}" />
+                <DataGridTextColumn Header="Size" Width="80" Binding="{Binding SizeStr}" />
+                <DataGridTextColumn Header="Progress" Width="100" Binding="{Binding Progress}" />
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

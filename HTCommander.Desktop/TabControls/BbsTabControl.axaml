@@ -4,13 +4,17 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="BBS" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="BBS" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="BbsStatus" Text="Inactive"
+                               VerticalAlignment="Center" Foreground="#888" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
-                    <CheckBox Name="ViewTrafficCheck" Content="View Traffic" />
+                    <CheckBox Name="ViewTrafficCheck" Content="View Traffic"
+                              IsChecked="True" Click="ViewTraffic_Click" />
                     <Button Name="ActivateButton" Content="Activate"
-                            Click="ActivateButton_Click" Padding="8,2" />
+                            Click="ActivateButton_Click" Padding="8,2" IsEnabled="False" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -25,9 +29,12 @@
             <DataGrid Name="BbsGrid" Grid.Row="0" AutoGenerateColumns="False"
                       IsReadOnly="True" CanUserSortColumns="True">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Call Sign" Width="120" />
-                    <DataGridTextColumn Header="Last Seen" Width="150" />
-                    <DataGridTextColumn Header="Stats" Width="*" />
+                    <DataGridTextColumn Header="Call Sign" Width="120" Binding="{Binding Callsign}" />
+                    <DataGridTextColumn Header="Last Seen" Width="150" Binding="{Binding LastSeenStr}" />
+                    <DataGridTextColumn Header="Packets In" Width="80" Binding="{Binding TotalPacketsIn}" />
+                    <DataGridTextColumn Header="Packets Out" Width="80" Binding="{Binding TotalPacketsOut}" />
+                    <DataGridTextColumn Header="Bytes In" Width="80" Binding="{Binding TotalBytesIn}" />
+                    <DataGridTextColumn Header="Bytes Out" Width="80" Binding="{Binding TotalBytesOut}" />
                 </DataGrid.Columns>
             </DataGrid>
 
@@ -36,7 +43,8 @@
 
             <TextBox Name="TrafficLog" Grid.Row="2" IsReadOnly="True"
                      AcceptsReturn="True" TextWrapping="Wrap"
-                     FontFamily="Consolas,Courier New,monospace" FontSize="11" />
+                     FontFamily="Consolas,Courier New,monospace" FontSize="11"
+                     Background="#1E1E1E" Foreground="#D4D4D4" />
         </Grid>
     </DockPanel>
 </UserControl>

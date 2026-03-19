@@ -15,12 +15,22 @@ namespace HTCommander.Desktop.TabControls
     public partial class ContactsTabControl : UserControl
     {
         private DataBrokerClient broker;
+        private List<StationInfoClass> currentStations = new List<StationInfoClass>();
 
         public ContactsTabControl()
         {
             InitializeComponent();
             broker = new DataBrokerClient();
             broker.Subscribe(0, "Stations", OnStationsChanged);
+
+            // Load initial stations
+            var stations = broker.GetValue<List<StationInfoClass>>(0, "Stations", null);
+            if (stations != null)
+            {
+                currentStations = stations;
+                StationsGrid.ItemsSource = currentStations;
+                StationCount.Text = $"{currentStations.Count} stations";
+            }
         }
 
         private void OnStationsChanged(int deviceId, string name, object data)
@@ -29,7 +39,9 @@ namespace HTCommander.Desktop.TabControls
             {
                 if (data is List<StationInfoClass> stations)
                 {
-                    StationsGrid.ItemsSource = stations;
+                    currentStations = stations;
+                    StationsGrid.ItemsSource = currentStations;
+                    StationCount.Text = $"{currentStations.Count} stations";
                 }
             });
         }
@@ -53,7 +65,14 @@ namespace HTCommander.Desktop.TabControls
 
         private void RemoveButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Remove selected station
+            if (StationsGrid.SelectedItem is StationInfoClass station)
+            {
+                currentStations.Remove(station);
+                DataBroker.Dispatch(0, "Stations", currentStations);
+                StationsGrid.ItemsSource = null;
+                StationsGrid.ItemsSource = currentStations;
+                StationCount.Text = $"{currentStations.Count} stations";
+            }
         }
     }
 }

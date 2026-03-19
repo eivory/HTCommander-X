@@ -4,12 +4,13 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="Voice" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Voice" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="VoiceStatus" Text="Idle" VerticalAlignment="Center"
+                               Foreground="#888" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
-                    <TextBlock Name="VoiceStatus" Text="Idle" VerticalAlignment="Center"
-                               Margin="0,0,8,0" />
                     <ComboBox Name="ModeCombo" Width="100" SelectedIndex="0">
                         <ComboBoxItem Content="Chat" />
                         <ComboBoxItem Content="Speak" />
@@ -30,13 +31,13 @@
             <TextBox Name="VoiceInput" Grid.Column="0" Watermark="Type message..."
                      KeyDown="VoiceInput_KeyDown" />
             <Button Name="TransmitButton" Grid.Column="1" Content="Transmit"
-                    Click="TransmitButton_Click" Padding="12,2" Margin="4,0" />
+                    Click="TransmitButton_Click" Padding="12,2" Margin="4,0" IsEnabled="False" />
             <Button Name="RecordButton" Grid.Column="2" Content="Record"
                     Click="RecordButton_Click" Padding="8,2" />
         </Grid>
 
         <!-- Voice messages display -->
-        <ScrollViewer>
+        <ScrollViewer Name="MessagesScroller">
             <StackPanel Name="VoiceMessages" Spacing="4" Margin="4" />
         </ScrollViewer>
     </DockPanel>

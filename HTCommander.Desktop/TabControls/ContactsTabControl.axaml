@@ -4,8 +4,11 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="Stations" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Stations" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="StationCount" Text="0 stations"
+                               VerticalAlignment="Center" Foreground="#888" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
                     <Button Name="AddButton" Content="Add" Click="AddButton_Click" Padding="8,2" />
@@ -22,10 +25,10 @@
                   CanUserSortColumns="True"
                   SelectionChanged="StationsGrid_SelectionChanged">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Callsign" Width="120" />
-                <DataGridTextColumn Header="Name" Width="150" />
-                <DataGridTextColumn Header="Type" Width="100" />
-                <DataGridTextColumn Header="Description" Width="*" />
+                <DataGridTextColumn Header="Callsign" Width="120" Binding="{Binding Callsign}" />
+                <DataGridTextColumn Header="Name" Width="150" Binding="{Binding Name}" />
+                <DataGridTextColumn Header="Type" Width="100" Binding="{Binding StationType}" />
+                <DataGridTextColumn Header="Description" Width="*" Binding="{Binding Description}" />
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>

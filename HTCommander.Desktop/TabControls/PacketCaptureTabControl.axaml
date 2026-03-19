@@ -29,9 +29,11 @@
                       IsReadOnly="True" CanUserSortColumns="True"
                       SelectionChanged="PacketsGrid_SelectionChanged">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Time" Width="140" />
-                    <DataGridTextColumn Header="Channel" Width="100" />
-                    <DataGridTextColumn Header="Data" Width="*" />
+                    <DataGridTextColumn Header="Time" Width="140" Binding="{Binding Time}" />
+                    <DataGridTextColumn Header="Dir" Width="40" Binding="{Binding Direction}" />
+                    <DataGridTextColumn Header="Channel" Width="100" Binding="{Binding Channel}" />
+                    <DataGridTextColumn Header="Encoding" Width="80" Binding="{Binding Encoding}" />
+                    <DataGridTextColumn Header="Data" Width="*" Binding="{Binding Data}" />
                 </DataGrid.Columns>
             </DataGrid>
 

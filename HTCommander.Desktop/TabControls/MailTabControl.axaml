@@ -4,14 +4,17 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="Mail" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Mail" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="WinlinkStatus" Text="" VerticalAlignment="Center"
+                               Foreground="#888" FontSize="11" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
                     <Button Name="ComposeButton" Content="Compose"
                             Click="ComposeButton_Click" Padding="8,2" />
-                    <Button Name="ConnectButton" Content="Connect"
-                            Click="ConnectButton_Click" Padding="8,2" />
+                    <Button Name="ConnectButton" Content="Sync"
+                            Click="ConnectButton_Click" Padding="8,2" IsEnabled="False" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -26,12 +29,12 @@
             <!-- Mailbox tree -->
             <TreeView Name="MailboxTree" Grid.Column="0"
                       SelectionChanged="MailboxTree_SelectionChanged">
-                <TreeViewItem Header="Inbox" Tag="inbox" IsExpanded="True" />
-                <TreeViewItem Header="Outbox" Tag="outbox" />
-                <TreeViewItem Header="Draft" Tag="draft" />
-                <TreeViewItem Header="Sent" Tag="sent" />
-                <TreeViewItem Header="Archive" Tag="archive" />
-                <TreeViewItem Header="Trash" Tag="trash" />
+                <TreeViewItem Header="Inbox" Tag="Inbox" IsExpanded="True" />
+                <TreeViewItem Header="Outbox" Tag="Outbox" />
+                <TreeViewItem Header="Draft" Tag="Draft" />
+                <TreeViewItem Header="Sent" Tag="Sent" />
+                <TreeViewItem Header="Archive" Tag="Archive" />
+                <TreeViewItem Header="Trash" Tag="Trash" />
             </TreeView>
 
             <GridSplitter Grid.Column="1" Width="5" />
@@ -47,16 +50,17 @@
                 <DataGrid Name="MailList" Grid.Row="0" AutoGenerateColumns="False"
                           IsReadOnly="True" SelectionChanged="MailList_SelectionChanged">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="From" Width="120" />
-                        <DataGridTextColumn Header="Subject" Width="*" />
-                        <DataGridTextColumn Header="Date" Width="140" />
+                        <DataGridTextColumn Header="From" Width="120" Binding="{Binding From}" />
+                        <DataGridTextColumn Header="Subject" Width="*" Binding="{Binding Subject}" />
+                        <DataGridTextColumn Header="Date" Width="140" Binding="{Binding DateStr}" />
                     </DataGrid.Columns>
                 </DataGrid>
 
                 <GridSplitter Grid.Row="1" Height="5" HorizontalAlignment="Stretch" />
 
                 <TextBox Name="MailPreview" Grid.Row="2" IsReadOnly="True"
-                         AcceptsReturn="True" TextWrapping="Wrap" />
+                         AcceptsReturn="True" TextWrapping="Wrap"
+                         Background="#1E1E1E" Foreground="#D4D4D4" />
             </Grid>
         </Grid>
     </DockPanel>

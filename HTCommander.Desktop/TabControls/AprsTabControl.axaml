@@ -4,15 +4,26 @@
     <DockPanel>
         <Border DockPanel.Dock="Top" Background="#2D2D30" Height="46" Padding="10,0">
             <Grid>
-                <TextBlock Text="APRS" VerticalAlignment="Center"
-                           FontSize="14" FontWeight="SemiBold" />
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="APRS" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="CallSignLabel" Text="" FontWeight="Bold"
+                               Foreground="#4FC3F7" VerticalAlignment="Center" />
+                </StackPanel>
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center" Spacing="4">
-                    <TextBlock Name="CallSignLabel" Text="" VerticalAlignment="Center"
-                               Margin="0,0,8,0" FontWeight="Bold" />
-                    <Button Content="Config" Click="ConfigButton_Click" Padding="8,2" />
+                    <CheckBox Name="ShowTelemetryCheck" Content="Show All"
+                              Click="ShowTelemetry_Click" />
+                    <TextBlock Name="MessageCount" Text="0 messages"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
                 </StackPanel>
             </Grid>
+        </Border>
+
+        <!-- Missing APRS channel warning -->
+        <Border Name="MissingChannelPanel" DockPanel.Dock="Top" Background="#3E2723"
+                Padding="8,4" IsVisible="False">
+            <TextBlock Text="No APRS channel found on connected radio. Create a channel named 'APRS' to enable APRS messaging."
+                       Foreground="#FFAB91" TextWrapping="Wrap" FontSize="11" />
         </Border>
 
         <!-- Transmit bar at bottom -->
@@ -25,20 +36,23 @@
                 <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <ComboBox Name="RouteCombo" Grid.Column="0" Width="120" Margin="0,0,4,0" />
-            <ComboBox Name="DestCombo" Grid.Column="1" Width="120" Margin="0,0,4,0" />
-            <TextBox Name="AprsMessageBox" Grid.Column="2" Watermark="APRS message..." />
+            <AutoCompleteBox Name="DestCombo" Grid.Column="1" Width="140" Margin="0,0,4,0"
+                               Watermark="Destination" FilterMode="StartsWith" />
+            <TextBox Name="AprsMessageBox" Grid.Column="2" Watermark="APRS message..."
+                     KeyDown="AprsMessageBox_KeyDown" />
             <Button Name="SendAprsButton" Grid.Column="3" Content="Send"
-                    Click="SendAprsButton_Click" Padding="12,2" Margin="4,0,0,0" />
+                    Click="SendAprsButton_Click" Padding="12,2" Margin="4,0,0,0" IsEnabled="False" />
         </Grid>
 
         <!-- Message list -->
         <DataGrid Name="AprsGrid" AutoGenerateColumns="False"
                   IsReadOnly="True" CanUserSortColumns="True">
             <DataGrid.Columns>
-                <DataGridTextColumn Header="Time" Width="140" />
-                <DataGridTextColumn Header="From" Width="100" />
-                <DataGridTextColumn Header="To" Width="100" />
-                <DataGridTextColumn Header="Message" Width="*" />
+                <DataGridTextColumn Header="Time" Width="80" Binding="{Binding Time}" />
+                <DataGridTextColumn Header="From" Width="100" Binding="{Binding From}" />
+                <DataGridTextColumn Header="To" Width="120" Binding="{Binding To}" />
+                <DataGridTextColumn Header="Type" Width="70" Binding="{Binding Type}" />
+                <DataGridTextColumn Header="Message" Width="*" Binding="{Binding Message}" />
             </DataGrid.Columns>
         </DataGrid>
     </DockPanel>
