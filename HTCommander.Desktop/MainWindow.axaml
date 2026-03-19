@@ -165,8 +165,9 @@
 
                         <!-- Channel list -->
                         <TextBlock Text="Channels" FontSize="12" Foreground="#888" FontWeight="SemiBold" Margin="0,4,0,2" />
-                        <ItemsControl Name="ChannelList">
-                            <ItemsControl.ItemTemplate>
+                        <ListBox Name="ChannelList" DoubleTapped="ChannelList_DoubleTapped"
+                                 Background="Transparent" Padding="0">
+                            <ListBox.ItemTemplate>
                                 <DataTemplate>
                                     <Border Margin="0,1" Padding="6,3" CornerRadius="3"
                                             Background="{Binding Background}">
@@ -179,8 +180,8 @@
                                         </Grid>
                                     </Border>
                                 </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>

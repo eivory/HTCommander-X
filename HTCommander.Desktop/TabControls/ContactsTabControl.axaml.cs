@@ -53,14 +53,46 @@ namespace HTCommander.Desktop.TabControls
             RemoveButton.IsEnabled = hasSelection;
         }
 
-        private void AddButton_Click(object sender, RoutedEventArgs e)
+        private async void AddButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Open station add dialog
+            var dialog = new Dialogs.AddStationDialog();
+            await dialog.ShowDialog(Avalonia.Application.Current.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow : this.VisualRoot as Window);
+            if (dialog.Confirmed)
+            {
+                var station = new StationInfoClass
+                {
+                    Callsign = dialog.Callsign,
+                    Name = dialog.StationName ?? "",
+                    StationType = (StationInfoClass.StationTypes)dialog.StationType,
+                    Description = dialog.Description ?? ""
+                };
+                currentStations.Add(station);
+                DataBroker.Dispatch(0, "Stations", currentStations);
+                StationsGrid.ItemsSource = null;
+                StationsGrid.ItemsSource = currentStations;
+                StationCount.Text = $"{currentStations.Count} stations";
+            }
         }
 
-        private void EditButton_Click(object sender, RoutedEventArgs e)
+        private async void EditButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Open station edit dialog
+            if (StationsGrid.SelectedItem is not StationInfoClass station) return;
+            var dialog = new Dialogs.AddStationDialog();
+            dialog.Title = "Edit Station";
+            dialog.SetStation(station.Callsign, station.Name, (int)station.StationType, station.Description);
+            await dialog.ShowDialog(Avalonia.Application.Current.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow : this.VisualRoot as Window);
+            if (dialog.Confirmed)
+            {
+                station.Callsign = dialog.Callsign;
+                station.Name = dialog.StationName ?? "";
+                station.StationType = (StationInfoClass.StationTypes)dialog.StationType;
+                station.Description = dialog.Description ?? "";
+                DataBroker.Dispatch(0, "Stations", currentStations);
+                StationsGrid.ItemsSource = null;
+                StationsGrid.ItemsSource = currentStations;
+            }
         }
 
         private void RemoveButton_Click(object sender, RoutedEventArgs e)

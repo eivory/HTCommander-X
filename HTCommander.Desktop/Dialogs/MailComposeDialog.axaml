@@ -15,7 +15,11 @@
         <StackPanel DockPanel.Dock="Top" Spacing="6" Margin="0,0,0,8">
             <Grid ColumnDefinitions="60,*">
                 <TextBlock Text="To:" VerticalAlignment="Center" />
-                <TextBox Name="ToBox" Grid.Column="1" />
+                <TextBox Name="ToBox" Grid.Column="1" Watermark="Callsign or email" />
+            </Grid>
+            <Grid ColumnDefinitions="60,*">
+                <TextBlock Text="Cc:" VerticalAlignment="Center" />
+                <TextBox Name="CcBox" Grid.Column="1" Watermark="Optional" />
             </Grid>
             <Grid ColumnDefinitions="60,*">
                 <TextBlock Text="Subject:" VerticalAlignment="Center" />
@@ -24,6 +28,7 @@
         </StackPanel>
 
         <TextBox Name="BodyBox" AcceptsReturn="True" TextWrapping="Wrap"
-                 Watermark="Type your message here..." />
+                 Watermark="Type your message here..."
+                 Background="#1E1E1E" Foreground="#D4D4D4" />
     </DockPanel>
 </Window>

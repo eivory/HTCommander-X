@@ -66,6 +66,14 @@ Still builds and runs on Windows. References Core. Files moved to Core are exclu
 ### DataBroker event flow
 Components communicate via `DataBroker.Dispatch(deviceId, name, data)` and `broker.Subscribe(deviceId, name, callback)`. Device 0 = global settings (auto-persisted to ISettingsStore — int/string/bool written directly, complex types JSON-serialized with `~~JSON:{type}:{json}` prefix). Device 1 = app-level events. Device 100+ = connected radios. All UI callbacks are marshalled via `SynchronizationContext`. Settings dialog reads/writes via `DataBroker.GetValue<T>(0, name, default)` and `DataBroker.Dispatch(0, name, value)`.
 
+### Tab control DataBroker wiring
+Each tab subscribes in its constructor and uses `Dispatcher.UIThread.Post()` for UI updates. Common pattern:
+- `broker.Subscribe(1, "ConnectedRadios", ...)` — `Radio[]` array; extract `DeviceId` via reflection since tabs don't reference Radio directly
+- `broker.Subscribe(DataBroker.AllDevices, "LockState", ...)` — `RadioLockState` per radio for exclusive access
+- `broker.Subscribe(DataBroker.AllDevices, "UniqueDataFrame", ...)` — deduplicated incoming packets
+- Tabs that need exclusive radio access (Terminal, BBS, Torrent) use the lock pattern: `Dispatch(radioId, "SetLock", new SetLockData { Usage = "Terminal", RegionId = -1, ChannelId = -1 })` and `Dispatch(radioId, "SetUnlock", new SetUnlockData { Usage = "Terminal" })`
+- On startup, tabs call `broker.GetValue<T>()` to load initial state, then subscribe for live updates
+
 ### Radio connection lifecycle
 1. `IPlatformServices.CreateRadioBluetooth(IRadioHost)` creates transport
 2. `Radio.Connect()` → `IRadioBluetooth.Connect()` → async BT connection
@@ -104,6 +112,7 @@ RFCOMM channel numbers vary by radio model and even between connections (VR-N76 
 - Radio dispatches state as **string** (e.g., `"Connected"`, not the enum), so subscribers must compare strings
 - `Utils` is a **partial class** — cross-platform methods in Core, WinForms-specific (SetDoubleBuffered, SendMessage) in src/
 - Avalonia dialogs use `Confirmed` bool property pattern for OK/Cancel results
+- Avalonia `ComboBox` has no `.Text` property — use `AutoCompleteBox` for editable text+dropdown combos, or `SelectedItem?.ToString()` for read-only combos
 - SSTV imaging uses SkiaSharp (`SKBitmap`), not System.Drawing. WinForms bridge: `SkiaBitmapConverter`
 - Avalonia Desktop uses **dark theme** (`RequestedThemeVariant="Dark"`) — tab headers use `#2D2D30`, text areas use `#1E1E1E`/`#D4D4D4`. Never use `Silver`, `LightGray`, or `#F0F0F0` backgrounds
 - Settings are stored as int 0/1 for booleans that need cross-platform compat (e.g., `AllowTransmit`, `WebServerEnabled`), use `DataBroker.GetValue<int>(0, key, 0) == 1` to read

@@ -158,9 +158,15 @@ namespace HTCommander.Desktop.TabControls
             }
         }
 
-        private void ComposeButton_Click(object sender, RoutedEventArgs e)
+        private async void ComposeButton_Click(object sender, RoutedEventArgs e)
         {
-            // TODO: Open compose dialog
+            var dialog = new Dialogs.MailComposeDialog();
+            await dialog.ShowDialog(Avalonia.Application.Current.ApplicationLifetime is Avalonia.Controls.ApplicationLifetimes.IClassicDesktopStyleApplicationLifetime desktop
+                ? desktop.MainWindow : this.VisualRoot as Window);
+            if (dialog.ResultMail != null)
+            {
+                DataBroker.Dispatch(0, "MailAdd", dialog.ResultMail, store: false);
+            }
         }
 
         private void ConnectButton_Click(object sender, RoutedEventArgs e)

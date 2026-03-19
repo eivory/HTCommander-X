@@ -24,6 +24,8 @@ namespace HTCommander.Desktop
         public string Frequency { get; set; }
         public IBrush Background { get; set; }
         public IBrush NameColor { get; set; }
+        public int ChannelIndex { get; set; }
+        public int DeviceId { get; set; }
     }
 
     public partial class MainWindow : Window
@@ -286,13 +288,16 @@ namespace HTCommander.Desktop
                 else if (isB) { bg = new SolidColorBrush(Color.Parse("#2A1B3A")); nameColor = new SolidColorBrush(Color.Parse("#CE93D8")); }
                 else { bg = Brushes.Transparent; nameColor = new SolidColorBrush(Color.Parse("#E0E0E0")); }
 
+                int deviceId = connectedRadios.Count > 0 ? connectedRadios[0].DeviceId : -1;
                 items.Add(new ChannelDisplayItem
                 {
                     Id = (i + 1).ToString(),
                     Name = !string.IsNullOrEmpty(ch.name_str) ? ch.name_str : $"CH {i + 1}",
                     Frequency = FormatFrequency(ch.rx_freq),
                     Background = bg,
-                    NameColor = nameColor
+                    NameColor = nameColor,
+                    ChannelIndex = i,
+                    DeviceId = deviceId
                 });
             }
 
@@ -459,6 +464,15 @@ namespace HTCommander.Desktop
         private void MenuExit_Click(object sender, RoutedEventArgs e)
         {
             Close();
+        }
+
+        private async void ChannelList_DoubleTapped(object sender, Avalonia.Input.TappedEventArgs e)
+        {
+            if (ChannelList.SelectedItem is ChannelDisplayItem item && item.DeviceId >= 0)
+            {
+                var dialog = new Dialogs.RadioChannelDialog(item.DeviceId, item.ChannelIndex);
+                await dialog.ShowDialog(this);
+            }
         }
 
         private void MenuExportChannels_Click(object sender, RoutedEventArgs e)
