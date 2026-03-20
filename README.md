@@ -33,21 +33,6 @@ An Amateur radio license is required to transmit using this software. You can ge
 - **Lee, K0QED** — [APRS-Parser](https://github.com/k0qed/aprs-parser)
 - **OpenStreetMap** — [openstreetmap.org](https://openstreetmap.org), free geographic data for the world
 
-### Installation
-
-**Linux**
-
-- **AppImage**: Download the `.AppImage` file, `chmod +x` it, and run. No installation required.
-- **Debian/Ubuntu**: Download the `.deb` package and install with `sudo dpkg -i HTCommander-X_*.deb`.
-
-**Windows**
-
-Download the [MSI Installer](https://github.com/Ylianst/HTCommander/raw/refs/heads/main/releases/HTCommander-0.59.msi) from the upstream project.
-
-**General**
-
-Pair your radio to your computer and run the application. If your computer does not have Bluetooth, you can get an inexpensive Bluetooth USB dongle. Make sure Bluetooth LE is supported. Pairing can be tricky — you have to pair TWO Bluetooth devices in quick succession. See the [Bluetooth pairing instructions](https://github.com/dikei100/HTCommander-X/blob/main/docs/Paring.md).
-
 ---
 
 ## Information below is from the [original project](https://github.com/Ylianst/HTCommander):
