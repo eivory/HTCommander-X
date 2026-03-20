@@ -602,8 +602,7 @@ namespace HTCommander
             }
 
             Adventurer.GameRunner runner = new Adventurer.GameRunner();
-
-            string output = runner.RunTurn("adv01.dat", Path.Combine(adventureAppDataPath, session.Addresses[0].CallSignWithId + ".sav"), dataStr).Replace("\r\n\r\n", "\r\n").Trim();
+            string output = runner.RunTurn(gameFilePath, Path.Combine(adventureAppDataPath, session.Addresses[0].CallSignWithId + ".sav"), dataStr).Replace("\r\n\r\n", "\r\n").Trim();
             if ((output != null) && (output.Length > 0))
             {
                 if (start) { output = "Welcome to the Adventure Game\r\"quit\" to go back to BBS.\r" + output; }
@@ -1051,8 +1050,7 @@ namespace HTCommander
             }
 
             Adventurer.GameRunner runner = new Adventurer.GameRunner();
-
-            string output = runner.RunTurn("adv01.dat", Path.Combine(adventureAppDataPath, p.addresses[1].CallSignWithId + ".sav"), p.dataStr).Replace("\r\n\r\n", "\r\n").Trim();
+            string output = runner.RunTurn(gameFilePath, Path.Combine(adventureAppDataPath, p.addresses[1].CallSignWithId + ".sav"), p.dataStr).Replace("\r\n\r\n", "\r\n").Trim();
             if ((output != null) && (output.Length > 0))
             {
                 broker.Dispatch(0, "BbsTraffic", new { DeviceId = deviceId, Callsign = p.addresses[1].ToString(), Outgoing = true, Message = output });
