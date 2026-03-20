@@ -677,14 +677,11 @@ namespace HTCommander
 
                     // Dispatch amplitude for UI
                     float maxAmplitude = 0;
-                    for (int i = 0; i < totalWritten; i += 2)
+                    for (int i = 0; i < totalWritten - 1; i += 2)
                     {
-                        if (i + 1 < totalWritten)
-                        {
-                            short sample = (short)(pcmFrame[i] | (pcmFrame[i + 1] << 8));
-                            float abs = Math.Abs(sample) / 32768f;
-                            if (abs > maxAmplitude) maxAmplitude = abs;
-                        }
+                        short sample = (short)(pcmFrame[i] | (pcmFrame[i + 1] << 8));
+                        float abs = Math.Abs((int)sample) / 32768f;
+                        if (abs > maxAmplitude) maxAmplitude = abs;
                     }
                     broker.Dispatch(DeviceId, "OutputAmplitude", maxAmplitude, store: false);
                 }
