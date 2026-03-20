@@ -63,6 +63,7 @@
                         <CheckBox Name="AllChannelsCheck" BorderThickness="0" IsHitTestVisible="False" />
                     </MenuItem.Icon>
                 </MenuItem>
+                <MenuItem Name="MenuRadioSelect" Header="Active _Radio" IsVisible="False" />
                 <Separator />
                 <MenuItem Name="MenuSpectrogram" Header="S_pectrogram..." Click="MenuSpectrogram_Click" />
                 <MenuItem Name="MenuAudioClips" Header="Audio _Clips..." Click="MenuAudioClips_Click" IsEnabled="False" />

@@ -122,21 +122,33 @@ namespace HTCommander.Platform.Linux
         {
             if (stream != IntPtr.Zero) return;
 
-            // Always open as stereo (2 channels) — mono on stereo devices only plays left channel
-            _outputChannels = 2;
+            uint sampleFormat = (uint)(_bitsPerSample == 16 ? 0x00000008 : 0x00000001); // paInt16 or paFloat32
+            int device = PortAudioNative.Pa_GetDefaultOutputDevice();
 
+            // Try stereo first — mono on stereo output devices only plays left channel
+            _outputChannels = 2;
             var outputParams = new PortAudioNative.PaStreamParameters
             {
-                device = PortAudioNative.Pa_GetDefaultOutputDevice(),
-                channelCount = _outputChannels,
-                sampleFormat = (uint)(_bitsPerSample == 16 ? 0x00000008 : 0x00000001), // paInt16 or paFloat32
+                device = device,
+                channelCount = 2,
+                sampleFormat = sampleFormat,
                 suggestedLatency = 0.1,
                 hostApiSpecificStreamInfo = IntPtr.Zero
             };
 
-            PortAudioNative.Pa_OpenStream(
+            int err = PortAudioNative.Pa_OpenStream(
                 out stream, IntPtr.Zero, ref outputParams,
                 _sampleRate, 256, 0, null, IntPtr.Zero);
+
+            // Fall back to mono if stereo fails
+            if (err != 0 || stream == IntPtr.Zero)
+            {
+                _outputChannels = _channels;
+                outputParams.channelCount = _channels;
+                err = PortAudioNative.Pa_OpenStream(
+                    out stream, IntPtr.Zero, ref outputParams,
+                    _sampleRate, 256, 0, null, IntPtr.Zero);
+            }
 
             if (stream != IntPtr.Zero)
                 PortAudioNative.Pa_StartStream(stream);

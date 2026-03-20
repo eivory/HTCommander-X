@@ -83,10 +83,4 @@ namespace HTCommander.Desktop.Dialogs
         }
     }
 
-    public class AudioClipEntry
-    {
-        public string Name { get; set; }
-        public string Duration { get; set; }
-        public string Size { get; set; }
-    }
 }

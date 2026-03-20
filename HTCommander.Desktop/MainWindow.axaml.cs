@@ -110,6 +110,7 @@ namespace HTCommander.Desktop
             DataBroker.AddDataHandler("AirplaneHandler", new HTCommander.Airplanes.AirplaneHandler());
             DataBroker.AddDataHandler("GpsSerialHandler", new HTCommander.Gps.GpsSerialHandler());
             DataBroker.AddDataHandler("AgwpeServer", new AgwpeServer());
+            DataBroker.AddDataHandler("AudioClipHandler", new AudioClipHandler());
         }
 
         private void OnRadioStateChanged(int deviceId, string name, object data)
@@ -201,7 +202,53 @@ namespace HTCommander.Desktop
 
         private void OnConnectedRadiosChanged(int deviceId, string name, object data)
         {
-            // Update the connected radios list in DataBroker
+            Dispatcher.UIThread.Post(() =>
+            {
+                // Rebuild radio selection submenu
+                MenuRadioSelect.Items.Clear();
+                if (data is System.Collections.IEnumerable enumerable)
+                {
+                    int count = 0;
+                    foreach (var item in enumerable)
+                    {
+                        if (item == null) continue;
+                        count++;
+                        var did = (int?)item.GetType().GetProperty("DeviceId")?.GetValue(item);
+                        if (!did.HasValue) continue;
+                        int radioDevId = did.Value;
+                        string radioName = GetRadioName(radioDevId);
+                        var menuItem = new MenuItem { Header = radioName };
+                        // Add check mark for active radio
+                        if (radioDevId == activeDeviceId)
+                        {
+                            menuItem.Icon = new CheckBox { IsChecked = true, BorderThickness = new Avalonia.Thickness(0), IsHitTestVisible = false };
+                        }
+                        int capturedId = radioDevId;
+                        menuItem.Click += (s, e) =>
+                        {
+                            activeDeviceId = capturedId;
+                            // Reload data for this radio
+                            var channels = DataBroker.GetValue<RadioChannelInfo[]>(capturedId, "Channels", null);
+                            if (channels != null) { currentChannels = channels; }
+                            var settings = DataBroker.GetValue<RadioSettings>(capturedId, "Settings", null);
+                            if (settings != null) { currentSettings = settings; }
+                            var devInfo = DataBroker.GetValue<RadioDevInfo>(capturedId, "Info", null);
+                            if (devInfo != null) { currentDevInfo = devInfo; }
+                            UpdateVfoDisplay();
+                            UpdateChannelList();
+                            UpdateVfoModeMenuItems();
+                            // Re-trigger connected radios to update check marks
+                            OnConnectedRadiosChanged(1, "ConnectedRadios", DataBroker.GetValue<object>(1, "ConnectedRadios", null));
+                        };
+                        MenuRadioSelect.Items.Add(menuItem);
+                    }
+                    MenuRadioSelect.IsVisible = count > 1;
+                }
+                else
+                {
+                    MenuRadioSelect.IsVisible = false;
+                }
+            });
         }
 
         private void OnFriendlyNameChanged(int deviceId, string name, object data)

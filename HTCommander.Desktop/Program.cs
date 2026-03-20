@@ -6,7 +6,6 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 using System;
 using System.IO;
-using System.Threading;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -17,6 +16,29 @@ namespace HTCommander.Desktop
     internal static class Program
     {
         public static IPlatformServices PlatformServices { get; private set; }
+        private static FileStream _lockFile;
+
+        private static bool AcquireSingleInstanceLock()
+        {
+            string configDir;
+            if (OperatingSystem.IsWindows())
+                configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "HTCommander");
+            else
+                configDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config", "HTCommander");
+
+            Directory.CreateDirectory(configDir);
+            string lockPath = Path.Combine(configDir, "htcommander.lock");
+
+            try
+            {
+                _lockFile = new FileStream(lockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+                return true;
+            }
+            catch (IOException)
+            {
+                return false;
+            }
+        }
 
         [STAThread]
         static void Main(string[] args)
@@ -29,20 +51,14 @@ namespace HTCommander.Desktop
 
             if (!multiInstance)
             {
-                string mutexName = "HtCommander-DB346020-4700-4026-A8D1-E05AE4F62A05";
-                bool isNewInstance;
-                using (Mutex mutex = new Mutex(true, mutexName, out isNewInstance))
+                if (!AcquireSingleInstanceLock())
                 {
-                    if (isNewInstance)
-                    {
-                        StartApp(args);
-                    }
+                    Console.Error.WriteLine("HTCommander is already running.");
+                    return;
                 }
             }
-            else
-            {
-                StartApp(args);
-            }
+
+            StartApp(args);
         }
 
         private static void StartApp(string[] args)
