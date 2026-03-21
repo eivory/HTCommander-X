@@ -11,7 +11,7 @@ HTCommander.sln
 ├── HTCommander.Core/              (net9.0 — all business logic, no UI/platform deps)
 ├── HTCommander.Platform.Windows/  (net9.0-windows — WinRT BT, NAudio, Registry, System.Speech)
 ├── HTCommander.Platform.Linux/    (net9.0 — BlueZ BT, PortAudio, espeak-ng, JSON settings)
-├── HTCommander.Desktop/           (net9.0 — Avalonia Desktop UI, 10 tabs + 39 dialogs + Mapsui map)
+├── HTCommander.Desktop/           (net9.0 — Avalonia Desktop UI, 11 tabs + 45 dialogs + Mapsui map)
 ├── src/                           (net9.0-windows — original WinForms app, still works)
 ├── packaging/linux/               (AppImage + .deb build scripts)
 ├── HTCommander.setup/             (Windows MSI installer)

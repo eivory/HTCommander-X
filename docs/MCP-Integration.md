@@ -24,7 +24,7 @@ All four files are in `HTCommander.Core/Utils/`:
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `McpServer.cs` | Data handler with `HttpListener` lifecycle. Follows the same self-initializing pattern as `RigctldServer.cs`: subscribes to `McpServerEnabled` / `McpServerPort` / `McpDebugToolsEnabled` on device 0, auto-starts/stops an HTTP listener on the configured port (default 5678). Binds to `localhost` only. | ~227 |
+| `McpServer.cs` | Data handler with `HttpListener` lifecycle. Follows the same self-initializing pattern as `RigctldServer.cs`: subscribes to `McpServerEnabled` / `McpServerPort` / `McpDebugToolsEnabled` / `ServerBindAll` on device 0, auto-starts/stops an HTTP listener on the configured port (default 5678). Binds to `localhost` by default; when `ServerBindAll` is 1, binds to all interfaces (`http://*:{port}/`) for LAN access. | ~227 |
 | `McpJsonRpc.cs` | JSON-RPC 2.0 message types (`JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcError`) and MCP protocol dispatcher (`McpProtocolHandler`). Routes `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read` methods. Also defines MCP data model classes: `McpToolDefinition`, `McpToolInputSchema`, `McpToolProperty`, `McpResourceDefinition`, `McpResourceContent`, `McpToolContent`. | ~270 |
 | `McpTools.cs` | Tool definitions and implementations. Each tool maps to `DataBroker.GetValue()` or `DataBroker.Dispatch()` calls. Contains `GetToolDefinitions()` (returns JSON Schema for each tool) and `CallTool(name, arguments)` (dispatches to the right handler method). | ~490 |
 | `McpResources.cs` | Resource definitions and readers. Resources are read-only state exposed as JSON. Dynamically lists per-radio resources based on connected radios. Contains `GetResourceDefinitions()` and `ReadResource(uri)`. | ~270 |
@@ -42,6 +42,7 @@ All four files are in `HTCommander.Core/Utils/`:
 | `get_channels` | All programmed channels: name, RX/TX freq, bandwidth, power | `GetValue<object>(deviceId, "Channels")` — casts to `RadioChannelInfo[]` |
 | `get_gps_position` | GPS latitude, longitude, altitude, speed, heading | `GetValue<object>(deviceId, "Position")` — reflects all properties and fields |
 | `get_battery` | Battery percentage | `GetValue<int>(deviceId, "BatteryAsPercentage")` |
+| `get_ht_status` | Live HT status: RSSI, TX/RX, squelch, scan, GPS lock, current channel | `GetValue<RadioHtStatus>(deviceId, "HtStatus")` |
 
 **Radio Control Tools (always available):**
 

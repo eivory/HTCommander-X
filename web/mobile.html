@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>HTCommander Mobile</title>
+    <link rel="stylesheet" href="mobile.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/x-icon" href="favicon.ico">
+    <meta name="theme-color" content="#0f0f1a">
+</head>
+<body>
+
+<div class="header">
+    <div style="display:flex;align-items:center">
+        <h1>HTCommander</h1>
+        <span id="connDot" class="conn-dot"></span>
+    </div>
+    <div class="header-right">
+        <span id="radioModel">--</span>
+    </div>
+</div>
+
+<!-- Status -->
+<div class="card" id="statusCard" style="display:none">
+    <div class="status-row">
+        <div class="status-item">
+            <span class="status-value" id="batteryVal">--%</span>
+            <span class="status-label">Battery</span>
+        </div>
+        <div class="status-item">
+            <span class="status-value" id="gpsVal">--</span>
+            <span class="status-label">GPS</span>
+        </div>
+        <div class="status-item">
+            <span class="status-value" id="scanVal">--</span>
+            <span class="status-label">Scan</span>
+        </div>
+        <div class="status-item">
+            <span class="status-value" id="rssiVal">0</span>
+            <span class="status-label">RSSI</span>
+        </div>
+    </div>
+</div>
+
+<!-- VFO Display -->
+<div class="vfo-container" id="vfoContainer" style="display:none">
+    <div class="vfo-card vfo-a" id="vfoACard">
+        <span class="tx-indicator" id="txIndicator"></span>
+        <div class="vfo-label">A</div>
+        <div class="vfo-name" id="vfoAName">--</div>
+        <div class="vfo-freq" id="vfoAFreq">---.---- MHz</div>
+        <div class="vfo-mode" id="vfoAMode">--</div>
+    </div>
+    <div class="vfo-card vfo-b" id="vfoBCard">
+        <div class="vfo-label">B</div>
+        <div class="vfo-name" id="vfoBName">--</div>
+        <div class="vfo-freq" id="vfoBFreq">---.---- MHz</div>
+        <div class="vfo-mode" id="vfoBMode">--</div>
+    </div>
+</div>
+
+<!-- RSSI Bar -->
+<div class="rssi-bar" id="rssiBar" style="display:none">
+    <div class="rssi-fill" id="rssiFill"></div>
+</div>
+
+<!-- Controls -->
+<div class="card" id="controlsCard" style="display:none">
+    <div class="controls-row">
+        <div class="control-group">
+            <span class="control-label">Volume <span id="volVal">0</span></span>
+            <input type="range" id="volumeSlider" min="0" max="15" value="0">
+        </div>
+        <div class="control-group">
+            <span class="control-label">Squelch <span id="sqVal">0</span></span>
+            <input type="range" id="squelchSlider" min="0" max="9" value="0">
+        </div>
+        <button class="btn" id="audioBtn" style="flex:0 0 60px">Audio</button>
+    </div>
+</div>
+
+<!-- Channel List -->
+<div class="card" id="channelCard" style="display:none">
+    <div class="section-header" id="channelToggle">
+        <span class="card-title" style="margin:0">Channels</span>
+        <span class="arrow open">&#9654;</span>
+    </div>
+    <div id="channelSection">
+        <div class="channel-list" id="channelList"></div>
+    </div>
+</div>
+
+<!-- Chat -->
+<div class="card" id="chatCard" style="display:none">
+    <div class="section-header" id="chatToggle">
+        <span class="card-title" style="margin:0">Chat</span>
+        <span class="arrow open">&#9654;</span>
+    </div>
+    <div id="chatSection">
+        <div class="chat-messages" id="chatMessages"></div>
+        <div class="chat-input-row">
+            <input type="text" id="chatInput" placeholder="Type a message...">
+            <button id="chatSendBtn">Send</button>
+        </div>
+    </div>
+</div>
+
+<!-- Disconnected message -->
+<div class="disconnected-msg" id="disconnectedMsg">
+    Connecting to HTCommander...
+</div>
+
+<div style="height:40px"></div>
+
+<script src="mobile.js"></script>
+</body>
+</html>

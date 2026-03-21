@@ -44,6 +44,7 @@ namespace HTCommander
             broker.Subscribe(0, "McpServerEnabled", OnSettingChanged);
             broker.Subscribe(0, "McpServerPort", OnSettingChanged);
             broker.Subscribe(0, "McpDebugToolsEnabled", OnSettingChanged);
+            broker.Subscribe(0, "ServerBindAll", OnSettingChanged);
 
             int enabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
             if (enabled == 1)
@@ -85,7 +86,9 @@ namespace HTCommander
             {
                 cts = new CancellationTokenSource();
                 listener = new HttpListener();
-                listener.Prefixes.Add("http://localhost:" + port + "/");
+                int bindAll = broker.GetValue<int>(0, "ServerBindAll", 0);
+                string host = (bindAll == 1) ? "*" : "localhost";
+                listener.Prefixes.Add("http://" + host + ":" + port + "/");
                 listener.Start();
                 running = true;
                 serverTask = Task.Run(() => AcceptRequestsAsync(cts.Token), cts.Token);

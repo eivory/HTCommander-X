@@ -93,6 +93,7 @@ namespace HTCommander.Desktop.Dialogs
             WinlinkUseStationIdCheck.IsChecked = DataBroker.GetValue<int>(0, "WinlinkUseStationId", 0) == 1;
 
             // Servers
+            ServerBindAllCheck.IsChecked = DataBroker.GetValue<int>(0, "ServerBindAll", 0) == 1;
             WebServerCheck.IsChecked = DataBroker.GetValue<int>(0, "WebServerEnabled", 0) == 1;
             WebPortUpDown.Value = DataBroker.GetValue<int>(0, "WebServerPort", 8080);
             AgwpeServerCheck.IsChecked = DataBroker.GetValue<int>(0, "AgwpeServerEnabled", 0) == 1;
@@ -153,6 +154,22 @@ namespace HTCommander.Desktop.Dialogs
                 }
             }
             if (GpsBaudCombo.SelectedIndex < 0) GpsBaudCombo.SelectedIndex = 0;
+
+            // RepeaterBook defaults
+            foreach (var country in RepeaterBookClient.Countries.Keys)
+                RBCountryCombo.Items.Add(country);
+            string rbCountry = DataBroker.GetValue<string>(0, "RepeaterBookCountry", "United States");
+            for (int i = 0; i < RBCountryCombo.Items.Count; i++)
+            {
+                if (RBCountryCombo.Items[i]?.ToString() == rbCountry) { RBCountryCombo.SelectedIndex = i; break; }
+            }
+            if (RBCountryCombo.SelectedIndex < 0 && RBCountryCombo.Items.Count > 0) RBCountryCombo.SelectedIndex = 0;
+            PopulateRBStates(rbCountry);
+            string rbState = DataBroker.GetValue<string>(0, "RepeaterBookState", "");
+            for (int i = 0; i < RBStateCombo.Items.Count; i++)
+            {
+                if (RBStateCombo.Items[i]?.ToString() == rbState) { RBStateCombo.SelectedIndex = i; break; }
+            }
 
             // Modem mode
             string modemMode = DataBroker.GetValue<string>(0, "SoftwareModemMode", "None");
@@ -278,6 +295,7 @@ namespace HTCommander.Desktop.Dialogs
             DataBroker.Dispatch(0, "WinlinkUseStationId", WinlinkUseStationIdCheck.IsChecked == true ? 1 : 0);
 
             // Servers
+            DataBroker.Dispatch(0, "ServerBindAll", ServerBindAllCheck.IsChecked == true ? 1 : 0);
             DataBroker.Dispatch(0, "WebServerEnabled", WebServerCheck.IsChecked == true ? 1 : 0);
             DataBroker.Dispatch(0, "WebServerPort", (int)(WebPortUpDown.Value ?? 8080));
             DataBroker.Dispatch(0, "AgwpeServerEnabled", AgwpeServerCheck.IsChecked == true ? 1 : 0);
@@ -300,6 +318,10 @@ namespace HTCommander.Desktop.Dialogs
             int baud = 4800;
             if (GpsBaudCombo.SelectedItem is ComboBoxItem bi) int.TryParse(bi.Content?.ToString(), out baud);
             DataBroker.Dispatch(0, "GpsBaudRate", baud);
+
+            // RepeaterBook defaults
+            DataBroker.Dispatch(0, "RepeaterBookCountry", RBCountryCombo.SelectedItem?.ToString() ?? "United States");
+            DataBroker.Dispatch(0, "RepeaterBookState", RBStateCombo.SelectedItem?.ToString() ?? "");
 
             // Audio devices
             DataBroker.Dispatch(0, "AudioOutputDevice", OutputDeviceCombo.SelectedItem?.ToString() ?? "");
@@ -434,6 +456,24 @@ namespace HTCommander.Desktop.Dialogs
         {
             if (AprsRoutesGrid.SelectedItem is AprsRouteItem item)
                 aprsRoutes.Remove(item);
+        }
+
+        private void PopulateRBStates(string country)
+        {
+            RBStateCombo.Items.Clear();
+            if (country != null && RepeaterBookClient.Countries.TryGetValue(country, out var states))
+            {
+                foreach (var s in states)
+                    RBStateCombo.Items.Add(s);
+            }
+            if (RBStateCombo.Items.Count > 0)
+                RBStateCombo.SelectedIndex = 0;
+        }
+
+        private void RBCountryCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            if (isLoading) return;
+            PopulateRBStates(RBCountryCombo.SelectedItem?.ToString());
         }
 
         private async void TestAirplaneServer_Click(object sender, RoutedEventArgs e)

@@ -1,0 +1,107 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HTCommander.Desktop.Dialogs.RepeaterBookDialog"
+        Title="Import from RepeaterBook"
+        Width="860" Height="620"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="12">
+        <!-- Bottom: Import controls -->
+        <Grid DockPanel.Dock="Bottom" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" Margin="0,10,0,0">
+            <RadioButton Name="AutoFillRadio" Content="Auto-fill empty slots" IsChecked="True"
+                         GroupName="SlotMode" Grid.Column="0" VerticalAlignment="Center" />
+            <RadioButton Name="ManualSlotRadio" Content="Start at channel:"
+                         GroupName="SlotMode" Grid.Column="1" VerticalAlignment="Center" Margin="16,0,4,0" />
+            <NumericUpDown Name="StartChannelBox" Grid.Column="2" Value="1" Minimum="1" Maximum="999"
+                           Width="80" IsEnabled="False" VerticalAlignment="Center" />
+            <TextBlock Name="SelectionInfo" Grid.Column="4" Text="" VerticalAlignment="Center"
+                       Margin="12,0,0,0" FontSize="12" />
+            <Button Name="ImportButton" Grid.Column="5" Content="Import Selected" Click="ImportButton_Click"
+                    Padding="16,6" Margin="8,0,0,0" IsEnabled="False" />
+            <Button Grid.Column="6" Content="Cancel" Click="CancelButton_Click"
+                    Padding="16,6" Margin="8,0,0,0" />
+        </Grid>
+
+        <!-- Top: Search parameters -->
+        <Border DockPanel.Dock="Top" Margin="0,0,0,8">
+            <StackPanel Spacing="6">
+                <!-- Row 1: Location -->
+                <Grid ColumnDefinitions="70,180,70,180,50,*">
+                    <TextBlock Grid.Column="0" Text="Country:" VerticalAlignment="Center" />
+                    <ComboBox Name="CountryCombo" Grid.Column="1" HorizontalAlignment="Stretch"
+                              SelectionChanged="CountryCombo_SelectionChanged" />
+                    <TextBlock Grid.Column="2" Text="State:" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <ComboBox Name="StateCombo" Grid.Column="3" HorizontalAlignment="Stretch" />
+                    <TextBlock Grid.Column="4" Text="City:" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBox Name="CityBox" Grid.Column="5" Watermark="Optional" />
+                </Grid>
+
+                <!-- Row 2: Filters -->
+                <Grid ColumnDefinitions="70,140,70,100,70,100,*">
+                    <TextBlock Grid.Column="0" Text="Band:" VerticalAlignment="Center" />
+                    <ComboBox Name="BandCombo" Grid.Column="1" SelectedIndex="0" HorizontalAlignment="Stretch"
+                              SelectionChanged="FilterChanged">
+                        <ComboBoxItem Content="All Bands" />
+                        <ComboBoxItem Content="2m (144 MHz)" />
+                        <ComboBoxItem Content="1.25m (222 MHz)" />
+                        <ComboBoxItem Content="70cm (440 MHz)" />
+                        <ComboBoxItem Content="23cm (1.2 GHz)" />
+                    </ComboBox>
+                    <TextBlock Grid.Column="2" Text="Mode:" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <ComboBox Name="ModeCombo" Grid.Column="3" SelectedIndex="0" HorizontalAlignment="Stretch"
+                              SelectionChanged="FilterChanged">
+                        <ComboBoxItem Content="All" />
+                        <ComboBoxItem Content="FM" />
+                        <ComboBoxItem Content="AM" />
+                    </ComboBox>
+                    <TextBlock Grid.Column="4" Text="Status:" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <ComboBox Name="StatusCombo" Grid.Column="5" SelectedIndex="0" HorizontalAlignment="Stretch"
+                              SelectionChanged="FilterChanged">
+                        <ComboBoxItem Content="All" />
+                        <ComboBoxItem Content="On-air" />
+                    </ComboBox>
+                </Grid>
+
+                <!-- Row 3: Coordinates -->
+                <Grid ColumnDefinitions="70,110,70,110,90,80,Auto,*,Auto,Auto">
+                    <TextBlock Grid.Column="0" Text="Latitude:" VerticalAlignment="Center" />
+                    <TextBox Name="LatBox" Grid.Column="1" Watermark="e.g. 47.6" />
+                    <TextBlock Grid.Column="2" Text="Longitude:" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBox Name="LonBox" Grid.Column="3" Watermark="e.g. -122.3" />
+                    <TextBlock Grid.Column="4" Text="Max dist (km):" VerticalAlignment="Center" Margin="8,0,0,0" />
+                    <TextBox Name="MaxDistBox" Grid.Column="5" Watermark="50" />
+                    <Button Name="GpsButton" Grid.Column="6" Content="GPS" Click="GpsButton_Click"
+                            Padding="8,4" Margin="4,0,0,0" ToolTip.Tip="Auto-fill from radio GPS" />
+                    <TextBlock Name="StatusLabel" Grid.Column="7" Text="" VerticalAlignment="Center"
+                               Margin="12,0,0,0" FontSize="12" />
+                    <Button Name="LoadCsvButton" Grid.Column="8" Content="Load CSV..." Click="LoadCsvButton_Click"
+                            Padding="8,4" Margin="4,0,0,0" />
+                    <Button Name="SearchButton" Grid.Column="9" Content="Search" Click="SearchButton_Click"
+                            Padding="12,4" Margin="4,0,0,0" />
+                </Grid>
+
+                <!-- Select All / Deselect All -->
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="Select All" Click="SelectAll_Click" Padding="8,2" FontSize="11" />
+                    <Button Content="Deselect All" Click="DeselectAll_Click" Padding="8,2" FontSize="11" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+
+        <!-- Results DataGrid -->
+        <DataGrid Name="ResultsGrid" AutoGenerateColumns="False" IsReadOnly="False"
+                  CanUserSortColumns="True" CanUserResizeColumns="True">
+            <DataGrid.Columns>
+                <DataGridCheckBoxColumn Header="" Width="40" Binding="{Binding IsSelected}" />
+                <DataGridTextColumn Header="Callsign" Width="90" Binding="{Binding Callsign}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Frequency" Width="100" Binding="{Binding FrequencyDisplay}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Offset" Width="70" Binding="{Binding OffsetDisplay}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Tone" Width="65" Binding="{Binding Tone}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Mode" Width="50" Binding="{Binding Mode}" IsReadOnly="True" />
+                <DataGridTextColumn Header="City" Width="130" Binding="{Binding City}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Distance" Width="80" Binding="{Binding DistanceDisplay}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Status" Width="70" Binding="{Binding Status}" IsReadOnly="True" />
+                <DataGridTextColumn Header="Use" Width="60" Binding="{Binding Use}" IsReadOnly="True" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</Window>

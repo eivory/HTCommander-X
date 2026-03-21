@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HTCommander.Desktop.Dialogs.QuickFrequencyDialog"
+        Title="Quick Frequency"
+        Width="420" Height="380"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False">
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button Name="OkButton" Content="OK" Click="OkButton_Click" Padding="16,6" />
+            <Button Content="Cancel" Click="CancelButton_Click" Padding="16,6" />
+        </StackPanel>
+
+        <StackPanel Spacing="8">
+            <TextBlock Text="Quick Frequency Entry" FontWeight="SemiBold" FontSize="14" />
+
+            <Grid ColumnDefinitions="120,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="Frequency (MHz):" VerticalAlignment="Center" />
+                <TextBox Name="FrequencyBox" Grid.Row="0" Grid.Column="1" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="Mode:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="ModeCombo" Grid.Row="1" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,6,0,0">
+                    <ComboBoxItem Content="FM" />
+                    <ComboBoxItem Content="AM" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="Bandwidth:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="BandwidthCombo" Grid.Row="2" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,6,0,0">
+                    <ComboBoxItem Content="Narrow (12.5kHz)" />
+                    <ComboBoxItem Content="Wide (25kHz)" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="3" Grid.Column="0" Text="Power:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="PowerCombo" Grid.Row="3" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,6,0,0">
+                    <ComboBoxItem Content="Low" />
+                    <ComboBoxItem Content="Medium" />
+                    <ComboBoxItem Content="High" />
+                </ComboBox>
+
+                <TextBlock Grid.Row="4" Grid.Column="0" Text="TX CTCSS/DCS:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="TxToneCombo" Grid.Row="4" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,6,0,0" />
+
+                <TextBlock Grid.Row="5" Grid.Column="0" Text="RX CTCSS/DCS:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="RxToneCombo" Grid.Row="5" Grid.Column="1" Width="160" HorizontalAlignment="Left" Margin="0,6,0,0" />
+
+                <TextBlock Grid.Row="6" Grid.Column="0" Text="Apply to:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                <ComboBox Name="VfoCombo" Grid.Row="6" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,6,0,0">
+                    <ComboBoxItem Content="VFO A" />
+                    <ComboBoxItem Content="VFO B" />
+                </ComboBox>
+            </Grid>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -258,6 +258,21 @@ namespace HTCommander
                 }
             });
 
+            tools.Add(new McpToolDefinition
+            {
+                Name = "get_ht_status",
+                Description = "Get live HT status: RSSI, TX/RX state, squelch, current channel, scan, GPS lock.",
+                InputSchema = new McpToolInputSchema
+                {
+                    Type = "object",
+                    Properties = new Dictionary<string, McpToolProperty>
+                    {
+                        ["device_id"] = new McpToolProperty { Type = "integer", Description = "Radio device ID (100+)" }
+                    },
+                    Required = new List<string> { "device_id" }
+                }
+            });
+
             // Debug tools
             bool debugEnabled = broker.GetValue<int>(0, "McpDebugToolsEnabled", 0) == 1;
             if (debugEnabled)
@@ -367,6 +382,7 @@ namespace HTCommander
                     case "disconnect_radio": return CallDisconnectRadio(arguments);
                     case "connect_radio": return CallConnectRadio(arguments);
                     case "send_chat_message": return CallSendChatMessage(arguments);
+                    case "get_ht_status": return CallGetHtStatus(arguments);
                     case "get_logs": return CallGetLogs(arguments);
                     case "get_databroker_state": return CallGetDataBrokerState(arguments);
                     case "get_app_setting": return CallGetAppSetting(arguments);
@@ -600,6 +616,28 @@ namespace HTCommander
             if (string.IsNullOrEmpty(message)) return MakeToolError("Message cannot be empty");
             broker.Dispatch(1, "Chat", message, store: false);
             return MakeToolResult("Chat message sent: " + message);
+        }
+
+        private object CallGetHtStatus(JsonElement args)
+        {
+            int deviceId = GetIntArg(args, "device_id");
+            var status = broker.GetValue<RadioHtStatus>(deviceId, "HtStatus", null);
+            if (status == null) return MakeToolResult("No HT status available for device " + deviceId);
+
+            var result = new Dictionary<string, object>
+            {
+                ["rssi"] = status.rssi,
+                ["is_power_on"] = status.is_power_on,
+                ["is_in_tx"] = status.is_in_tx,
+                ["is_in_rx"] = status.is_in_rx,
+                ["is_sq"] = status.is_sq,
+                ["curr_ch_id"] = status.curr_ch_id,
+                ["is_scan"] = status.is_scan,
+                ["is_gps_locked"] = status.is_gps_locked,
+                ["double_channel"] = status.double_channel.ToString()
+            };
+
+            return MakeToolResult(JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true }));
         }
 
         // ---- Debug Tools ----

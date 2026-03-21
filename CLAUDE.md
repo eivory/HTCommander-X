@@ -73,8 +73,11 @@ All radio protocol logic, data handlers, codecs, and parsers. Key subsystems:
 - **CatSerialServer**: Virtual serial port emulating Kenwood TS-2000 CAT protocol for VaraFM PTT. ASCII semicolon-terminated commands at 9600 baud. Supports TX/RX (PTT), FA/FB (VFO frequencies), MD (mode), IF (transceiver info), ID (radio ID). Uses `IPlatformServices.CreateVirtualSerialPort()` for platform-specific PTY/COM. Dispatches `ExternalPttState`; publishes `CatPortPath` (string) on device 1. Auto-starts/stops via `CatServerEnabled` setting.
 - **VirtualAudioBridge**: Bidirectional audio routing via PulseAudio/PipeWire virtual devices. RX: radio PCM 32kHz → resample to 48kHz → virtual source ("HTCommander Radio Audio"). TX: virtual sink monitor ("HTCommander TX") → resample 48kHz→32kHz → `TransmitVoicePCM`. TX path gated on `ExternalPttState` from RigctldServer/CatSerialServer. Creates PulseAudio modules (`module-null-sink`, `module-virtual-source`), uses `pacat`/`parecord` subprocesses. Auto-starts/stops via `VirtualAudioEnabled` setting.
 - **AudioResampler**: Pure managed audio resampler (linear interpolation) for 32kHz↔48kHz conversion. Methods: `Resample16BitMono()`, `ResampleStereoToMono16Bit()`. Replaces Windows-only MediaFoundationResampler.
-- **McpServer**: MCP (Model Context Protocol) HTTP server for AI-powered radio control. JSON-RPC 2.0 over `HttpListener` on localhost (default port 5678). `McpTools` exposes 20 tools (radio queries, control including connect/disconnect, debug) that map to DataBroker calls. Connect/disconnect tools dispatch `McpConnectRadio`/`McpDisconnectRadio` events to device 1, handled by MainWindow. `McpResources` exposes dynamic read-only resources (radio info/settings/channels/status, app logs/settings). `McpJsonRpc` handles protocol dispatch. Debug tools (DataBroker inspection, arbitrary event dispatch) gated behind `McpDebugToolsEnabled` setting. Auto-starts/stops via `McpServerEnabled`/`McpServerPort`/`McpDebugToolsEnabled` settings. See `docs/MCP-Integration.md` for full implementation details and removal instructions.
-- **WebServer**: HTTP static file server for the embedded web interface (`web/` directory). Serves files via `HttpListener` on localhost (default port 8080). Path traversal protection. Auto-starts/stops via `WebServerEnabled`/`WebServerPort` settings.
+- **McpServer**: MCP (Model Context Protocol) HTTP server for AI-powered radio control. JSON-RPC 2.0 over `HttpListener` on localhost (default port 5678). `McpTools` exposes 21 tools (radio queries including `get_ht_status` for live RSSI/TX/RX, control including connect/disconnect, debug) that map to DataBroker calls. Connect/disconnect tools dispatch `McpConnectRadio`/`McpDisconnectRadio` events to device 1, handled by MainWindow. `McpResources` exposes dynamic read-only resources (radio info/settings/channels/status, app logs/settings). `McpJsonRpc` handles protocol dispatch. Debug tools (DataBroker inspection, arbitrary event dispatch) gated behind `McpDebugToolsEnabled` setting. Auto-starts/stops via `McpServerEnabled`/`McpServerPort`/`McpDebugToolsEnabled`/`ServerBindAll` settings. `ServerBindAll` enables binding to all interfaces for LAN access. See `docs/MCP-Integration.md` for full implementation details and removal instructions.
+- **WebServer**: HTTP static file server for the embedded web interface (`web/` directory). Serves files via `HttpListener` on localhost (default port 8080). Path traversal protection. Auto-starts/stops via `WebServerEnabled`/`WebServerPort` settings. `ServerBindAll` setting (shared with McpServer) switches to `http://*:{port}/` for LAN access. Exposes `/api/config` endpoint returning `{"mcpPort":N,"mcpEnabled":bool}` for the mobile web UI.
+- **RepeaterBookClient**: API client for RepeaterBook repeater database. Supports live API search by country/state and CSV import. Haversine distance calculation for proximity sorting. `ToRadioChannel()` converts entries to `RadioChannelInfo` for channel import.
+- **AdifExport**: ADIF 3.1.4 format writer for QSO logbook export. Standard `<TAG:length>value` encoding with `<EOR>` record terminators.
+- **QsoEntry**: QSO log entry data model with `GetBand()` helper for frequency-to-band conversion (HF through 23cm).
 
 ### Platform Projects
 
@@ -84,7 +87,7 @@ All radio protocol logic, data handlers, codecs, and parsers. Key subsystems:
 
 ### HTCommander.Desktop (net9.0) — Avalonia UI
 
-- 10 tab controls + 41 dialogs + Mapsui map + left-side radio info panel with radio image overlay
+- 11 tab controls + 45 dialogs + Mapsui map + left-side radio info panel with radio image overlay
 - Platform auto-detected at startup via reflection in `Program.cs`; conditional project references load Windows or Linux platform assembly
 - Single-instance enforcement via file lock (`~/.config/HTCommander/htcommander.lock`); bypass with `-multiinstance` flag
 - Supports Light/Dark/Auto themes via `ThemeDictionaries` in `App.axaml` with `App.SetTheme()`
@@ -99,7 +102,10 @@ All radio protocol logic, data handlers, codecs, and parsers. Key subsystems:
 - Detachable tabs: right-click any tab header → "Detach Tab" opens content in a separate `DetachedTabDialog` window; closing re-attaches the tab
 - VFO channel switching dispatches `ChannelChangeVfoA` / `ChannelChangeVfoB` to the active radio device — no Core changes needed, Radio.cs already handles these
 - VFO frequency mode toggle: `vfo_x` is a 2-bit field in `RadioSettings` (bit 0 = VFO A, bit 1 = VFO B; 0=memory, 1=frequency). Toggled via `WriteSettings` with `RadioSettings.ToByteArray(..., vfo_x)` overload. Context menu items only visible when `RadioDevInfo.support_vfo == true`
-- Tab order: Communication, Contacts, Packets, Terminal, BBS, Mail, Torrent, APRS, Map, Debug
+- Quick Frequency Entry: VFO right-click → "Quick Frequency..." writes a scratch channel (last slot, named "QF") and switches the VFO to it. Works on all radios including those without VFO firmware support. Last-used values persisted via DataBroker device 0.
+- RepeaterBook Import: Radio → "Import from RepeaterBook..." dialog with live API search by country/state or CSV import. Filters by band/mode/status/distance. Auto-fill GPS coordinates. Import to auto-fill empty slots or manual start slot.
+- Logbook Tab: QSO logging with Add/Edit/Remove and ADIF export. Data persisted on DataBroker device 0 (same pattern as Contacts). Auto-fills frequency/mode from connected radio and callsign from settings.
+- Tab order: Communication, Contacts, Logbook, Packets, Terminal, BBS, Mail, Torrent, APRS, Map, Debug
 
 ### src/ (net9.0-windows) — Original WinForms app
 
@@ -224,7 +230,7 @@ For programmatic theme-aware colors in code-behind, use `GetThemeBrush(resourceK
 - `packaging/linux/` — AppImage and .deb build scripts
 - `HTCommander.setup/` — Windows MSI installer project
 - `Updater/` — HtCommanderUpdater project (Windows self-update helper)
-- `web/` — embedded web interface (HTML/JS)
+- `web/` — embedded web interface (HTML/JS). `index.html` is the desktop Web Bluetooth UI; `mobile.html` is a mobile-first SPA that uses the MCP JSON-RPC API for remote radio control over LAN (status, VFO display, channel switching, chat)
 - `releases/` — Windows MSI release artifacts + `version.txt`
 - Two git remotes: `origin` (Ylianst/HTCommander upstream), `fork` (dikei100/HTCommander-X)
 - Active branch: `main`

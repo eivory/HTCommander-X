@@ -1,0 +1,42 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="HTCommander.Desktop.TabControls.LogbookTabControl">
+    <DockPanel>
+        <Border DockPanel.Dock="Top" Background="{DynamicResource TabHeaderBackground}" Height="46" Padding="10,0">
+            <Grid>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Spacing="8">
+                    <TextBlock Text="Logbook" FontSize="14" FontWeight="SemiBold" />
+                    <TextBlock Name="QsoCount" Text="0 QSOs"
+                               VerticalAlignment="Center" Foreground="#888" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Spacing="4">
+                    <Button Name="AddButton" Content="Add" Click="AddButton_Click" Padding="8,2" />
+                    <Button Name="EditButton" Content="Edit" Click="EditButton_Click"
+                            Padding="8,2" IsEnabled="False" />
+                    <Button Name="RemoveButton" Content="Remove" Click="RemoveButton_Click"
+                            Padding="8,2" IsEnabled="False" />
+                    <Button Name="ExportButton" Content="Export ADIF" Click="ExportButton_Click"
+                            Padding="8,2" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <DataGrid Name="QsoGrid" AutoGenerateColumns="False"
+                  IsReadOnly="True" CanUserReorderColumns="True"
+                  CanUserSortColumns="True"
+                  SelectionChanged="QsoGrid_SelectionChanged">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="Date/Time (UTC)" Width="150" Binding="{Binding DateTimeDisplay}" />
+                <DataGridTextColumn Header="Callsign" Width="100" Binding="{Binding Callsign}" />
+                <DataGridTextColumn Header="Frequency" Width="110" Binding="{Binding FrequencyDisplay}" />
+                <DataGridTextColumn Header="Mode" Width="60" Binding="{Binding Mode}" />
+                <DataGridTextColumn Header="Band" Width="60" Binding="{Binding Band}" />
+                <DataGridTextColumn Header="RST S" Width="55" Binding="{Binding RstSent}" />
+                <DataGridTextColumn Header="RST R" Width="55" Binding="{Binding RstReceived}" />
+                <DataGridTextColumn Header="My Call" Width="90" Binding="{Binding MyCallsign}" />
+                <DataGridTextColumn Header="Notes" Width="*" Binding="{Binding Notes}" />
+            </DataGrid.Columns>
+        </DataGrid>
+    </DockPanel>
+</UserControl>

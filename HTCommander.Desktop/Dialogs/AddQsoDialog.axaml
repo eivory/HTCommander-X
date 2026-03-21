@@ -1,0 +1,66 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="HTCommander.Desktop.Dialogs.AddQsoDialog"
+        Title="Log QSO"
+        Width="460" Height="450"
+        CanResize="False"
+        WindowStartupLocation="CenterOwner">
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Spacing="8" Margin="0,12,0,0">
+            <Button Content="OK" Click="OkButton_Click" Padding="16,6" />
+            <Button Content="Cancel" Click="CancelButton_Click" Padding="16,6" />
+        </StackPanel>
+
+        <ScrollViewer>
+            <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto" Margin="0,4,0,0">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="Callsign:" VerticalAlignment="Center" />
+                    <TextBox Name="CallsignBox" Grid.Row="0" Grid.Column="1" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="Start (UTC):" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,6,0,0">
+                        <DatePicker Name="StartDatePicker" Width="160" />
+                        <TimePicker Name="StartTimePicker" Width="120" ClockIdentifier="24HourClock" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="End (UTC):" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="4" Margin="0,6,0,0">
+                        <DatePicker Name="EndDatePicker" Width="160" />
+                        <TimePicker Name="EndTimePicker" Width="120" ClockIdentifier="24HourClock" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="Frequency (MHz):" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="8" Margin="0,6,0,0">
+                        <TextBox Name="FrequencyBox" Width="130" TextChanged="FrequencyBox_TextChanged" />
+                        <TextBlock Name="BandLabel" Text="" VerticalAlignment="Center" Foreground="#888" />
+                    </StackPanel>
+
+                    <TextBlock Grid.Row="4" Grid.Column="0" Text="Mode:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <ComboBox Name="ModeCombo" Grid.Row="4" Grid.Column="1" Width="120" HorizontalAlignment="Left" Margin="0,6,0,0" SelectedIndex="0">
+                        <ComboBoxItem Content="FM" />
+                        <ComboBoxItem Content="AM" />
+                        <ComboBoxItem Content="SSB" />
+                        <ComboBoxItem Content="CW" />
+                        <ComboBoxItem Content="FT8" />
+                        <ComboBoxItem Content="RTTY" />
+                        <ComboBoxItem Content="Other" />
+                    </ComboBox>
+
+                    <TextBlock Grid.Row="5" Grid.Column="0" Text="RST Sent:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <TextBox Name="RstSentBox" Grid.Row="5" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,6,0,0" />
+
+                    <TextBlock Grid.Row="6" Grid.Column="0" Text="RST Received:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <TextBox Name="RstReceivedBox" Grid.Row="6" Grid.Column="1" Width="80" HorizontalAlignment="Left" Margin="0,6,0,0" />
+
+                    <TextBlock Grid.Row="7" Grid.Column="0" Text="My Callsign:" VerticalAlignment="Center" Margin="0,6,0,0" />
+                    <TextBox Name="MyCallsignBox" Grid.Row="7" Grid.Column="1" Margin="0,6,0,0" />
+
+                    <TextBlock Grid.Row="8" Grid.Column="0" Text="Notes:" VerticalAlignment="Top" Margin="0,6,0,0" />
+                    <TextBox Name="NotesBox" Grid.Row="8" Grid.Column="1" Height="70"
+                             AcceptsReturn="True" TextWrapping="Wrap" Margin="0,6,0,0" />
+                </Grid>
+            </StackPanel>
+        </ScrollViewer>
+    </DockPanel>
+</Window>

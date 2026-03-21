@@ -29,6 +29,7 @@ namespace HTCommander
 
             broker.Subscribe(0, "WebServerEnabled", OnSettingChanged);
             broker.Subscribe(0, "WebServerPort", OnSettingChanged);
+            broker.Subscribe(0, "ServerBindAll", OnSettingChanged);
 
             webRoot = Path.Combine(AppContext.BaseDirectory, "web");
 
@@ -72,7 +73,9 @@ namespace HTCommander
             {
                 cts = new CancellationTokenSource();
                 listener = new HttpListener();
-                listener.Prefixes.Add("http://localhost:" + port + "/");
+                int bindAll = broker.GetValue<int>(0, "ServerBindAll", 0);
+                string host = (bindAll == 1) ? "*" : "localhost";
+                listener.Prefixes.Add("http://" + host + ":" + port + "/");
                 listener.Start();
                 running = true;
                 serverTask = Task.Run(() => AcceptRequestsAsync(cts.Token), cts.Token);
@@ -130,6 +133,22 @@ namespace HTCommander
             try
             {
                 string urlPath = context.Request.Url.AbsolutePath;
+
+                // API endpoint: return config for mobile web UI
+                if (urlPath == "/api/config")
+                {
+                    int mcpPort = broker.GetValue<int>(0, "McpServerPort", 5678);
+                    int mcpEnabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
+                    string json = "{\"mcpPort\":" + mcpPort + ",\"mcpEnabled\":" + (mcpEnabled == 1 ? "true" : "false") + "}";
+                    context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
+                    context.Response.ContentType = "application/json";
+                    byte[] buffer = Encoding.UTF8.GetBytes(json);
+                    context.Response.ContentLength64 = buffer.Length;
+                    context.Response.StatusCode = 200;
+                    context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+                    return;
+                }
+
                 if (urlPath == "/") urlPath = "/index.html";
 
                 string relativePath = Uri.UnescapeDataString(urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));

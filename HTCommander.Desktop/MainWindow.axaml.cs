@@ -750,6 +750,12 @@ namespace HTCommander.Desktop
             }
         }
 
+        private async void MenuRepeaterBook_Click(object sender, RoutedEventArgs e)
+        {
+            var dialog = new Dialogs.RepeaterBookDialog(activeDeviceId, currentChannels);
+            await dialog.ShowDialog(this);
+        }
+
         private async void MenuGpsInfo_Click(object sender, RoutedEventArgs e)
         {
             if (activeDeviceId < 0) return;
@@ -900,6 +906,41 @@ namespace HTCommander.Desktop
             if (activeDeviceId < 0 || currentSettings == null) return;
             var dialog = new Dialogs.RadioChannelDialog(activeDeviceId, currentSettings.channel_b);
             await dialog.ShowDialog(this);
+        }
+
+        private async void VfoAQuickFreq_Click(object sender, RoutedEventArgs e)
+            => await QuickFrequencyEntry("A");
+
+        private async void VfoBQuickFreq_Click(object sender, RoutedEventArgs e)
+            => await QuickFrequencyEntry("B");
+
+        private async System.Threading.Tasks.Task QuickFrequencyEntry(string defaultVfo)
+        {
+            if (activeDeviceId < 0 || currentChannels == null || currentDevInfo == null) return;
+
+            var dialog = new Dialogs.QuickFrequencyDialog(defaultVfo);
+            await dialog.ShowDialog(this);
+            if (!dialog.Confirmed) return;
+
+            int scratchIndex = currentDevInfo.channel_count - 1;
+
+            var scratch = new RadioChannelInfo();
+            scratch.channel_id = scratchIndex;
+            scratch.rx_freq = dialog.FrequencyHz;
+            scratch.tx_freq = dialog.FrequencyHz;
+            scratch.rx_mod = dialog.Modulation;
+            scratch.tx_mod = dialog.Modulation;
+            scratch.bandwidth = dialog.Bandwidth;
+            scratch.tx_sub_audio = dialog.TxTone;
+            scratch.rx_sub_audio = dialog.RxTone;
+            scratch.name_str = "QF";
+            scratch.tx_at_max_power = (dialog.PowerLevel == 2);
+            scratch.tx_at_med_power = (dialog.PowerLevel == 1);
+
+            DataBroker.Dispatch(activeDeviceId, "WriteChannel", scratch, store: false);
+
+            string dispatchName = dialog.VfoTarget == "A" ? "ChannelChangeVfoA" : "ChannelChangeVfoB";
+            DataBroker.Dispatch(activeDeviceId, dispatchName, scratchIndex, store: false);
         }
 
         private void ChannelSetVfoA_Click(object sender, RoutedEventArgs e)

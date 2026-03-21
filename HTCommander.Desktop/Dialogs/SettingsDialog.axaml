@@ -94,6 +94,7 @@
             <TabItem Header="Servers">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="16" Margin="12">
+                    <CheckBox Name="ServerBindAllCheck" Content="Allow remote access (bind to all network interfaces)" />
                     <StackPanel Spacing="6">
                         <CheckBox Name="WebServerCheck" Content="Enable Web Server" />
                         <Grid ColumnDefinitions="110,*" Margin="24,0,0,0">
@@ -178,6 +179,16 @@
                             </ComboBox>
                         </Grid>
                         <TextBlock Name="GpsStatusLabel" Text="" FontSize="11" Margin="110,4,0,0" />
+                    </StackPanel>
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="RepeaterBook Defaults" FontWeight="SemiBold" />
+                        <Grid ColumnDefinitions="110,*" RowDefinitions="Auto,Auto" Margin="0,4,0,0">
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="Country:" VerticalAlignment="Center" />
+                            <ComboBox Name="RBCountryCombo" Grid.Row="0" Grid.Column="1" Width="200" HorizontalAlignment="Left"
+                                      SelectionChanged="RBCountryCombo_SelectionChanged" />
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="State:" VerticalAlignment="Center" Margin="0,8,0,0" />
+                            <ComboBox Name="RBStateCombo" Grid.Row="1" Grid.Column="1" Width="200" HorizontalAlignment="Left" Margin="0,8,0,0" />
+                        </Grid>
                     </StackPanel>
                 </StackPanel>
             </TabItem>

@@ -51,6 +51,7 @@
                 <Separator />
                 <MenuItem Name="MenuExportChannels" Header="_Export Channels..." Click="MenuExportChannels_Click" IsEnabled="False" />
                 <MenuItem Name="MenuImportChannels" Header="_Import Channels..." Click="MenuImportChannels_Click" />
+                <MenuItem Name="MenuRepeaterBook" Header="Import from _RepeaterBook..." Click="MenuRepeaterBook_Click" />
             </MenuItem>
             <MenuItem Header="_View">
                 <MenuItem Name="MenuRadioPanel" Header="_Radio Panel" Click="MenuRadioPanel_Click">
@@ -169,6 +170,7 @@
                                 <ContextMenu>
                                     <MenuItem Header="Change Channel..." Click="VfoAChangeChannel_Click" />
                                     <MenuItem Header="Edit Frequency..." Click="VfoAEditFreq_Click" />
+                                    <MenuItem Header="Quick Frequency..." Click="VfoAQuickFreq_Click" />
                                     <Separator />
                                     <MenuItem Name="VfoAFreqModeItem" Header="Frequency Mode" Click="VfoAFreqMode_Click" IsVisible="False">
                                         <MenuItem.Icon>
@@ -195,6 +197,7 @@
                                 <ContextMenu>
                                     <MenuItem Header="Change Channel..." Click="VfoBChangeChannel_Click" />
                                     <MenuItem Header="Edit Frequency..." Click="VfoBEditFreq_Click" />
+                                    <MenuItem Header="Quick Frequency..." Click="VfoBQuickFreq_Click" />
                                     <Separator />
                                     <MenuItem Name="VfoBFreqModeItem" Header="Frequency Mode" Click="VfoBFreqMode_Click" IsVisible="False">
                                         <MenuItem.Icon>
@@ -318,6 +321,9 @@
             </TabItem>
             <TabItem Header="Contacts">
                 <tabs:ContactsTabControl />
+            </TabItem>
+            <TabItem Header="Logbook">
+                <tabs:LogbookTabControl />
             </TabItem>
             <TabItem Header="Packets">
                 <tabs:PacketCaptureTabControl />
