@@ -99,9 +99,8 @@ namespace HTCommander
             catch { }
         }
 
-        public async Task HandleWebSocketAsync(HttpListenerWebSocketContext wsContext, CancellationToken ct)
+        public async Task HandleWebSocketAsync(WebSocket ws, CancellationToken ct)
         {
-            var ws = wsContext.WebSocket;
             var clientId = Guid.NewGuid();
             clients.TryAdd(clientId, ws);
             Log("WebSocket audio client connected: " + clientId.ToString().Substring(0, 8));

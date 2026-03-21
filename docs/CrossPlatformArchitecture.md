@@ -27,7 +27,7 @@ HTCommander.sln
 - **Data models**: RadioSettings, RadioChannelInfo, RadioDevInfo, RadioHtStatus, RadioPosition, etc.
 - **Handlers**: AprsHandler, BbsHandler, VoiceHandler, Torrent, LogStore, PacketStore, FrameDeduplicator, MailStore, WinlinkClient, AirplaneHandler, GpsSerialHandler, AgwpeServer, AudioClipHandler, RigctldServer, CatSerialServer, VirtualAudioBridge, McpServer, WebServer
 - **Libraries**: hamlib (DSP/modem), sbc (codec), SSTV (image encode/decode), AprsParser, GPS/NMEA, WinLink, Airplanes, Adventurer, DmtfEngine
-- **Infrastructure**: DataBroker, DataBrokerClient, AppCallbacks, AudioResampler, WavFileWriter, SkiaImageHelper, WebAudioBridge, RepeaterBookClient, AdifExport
+- **Infrastructure**: DataBroker, DataBrokerClient, AppCallbacks, AudioResampler, WavFileWriter, SkiaImageHelper, WebAudioBridge, TlsHttpServer, TlsCertificateManager, RepeaterBookClient, AdifExport
 
 ### Platform Abstraction Interfaces
 All defined in `Core/Interfaces/`:

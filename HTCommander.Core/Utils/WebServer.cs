@@ -6,8 +6,8 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 using System;
 using System.IO;
-using System.Net;
 using System.Net.WebSockets;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -17,11 +17,10 @@ namespace HTCommander
     public class WebServer : IDisposable
     {
         private DataBrokerClient broker;
-        private HttpListener listener;
-        private CancellationTokenSource cts;
-        private Task serverTask;
+        private TlsHttpServer server;
         private int port;
         private bool running = false;
+        private bool tlsEnabled = false;
         private string webRoot;
         private WebAudioBridge audioBridge;
 
@@ -33,6 +32,7 @@ namespace HTCommander
             broker.Subscribe(0, "WebServerEnabled", OnSettingChanged);
             broker.Subscribe(0, "WebServerPort", OnSettingChanged);
             broker.Subscribe(0, "ServerBindAll", OnSettingChanged);
+            broker.Subscribe(0, "TlsEnabled", OnSettingChanged);
 
             webRoot = Path.Combine(AppContext.BaseDirectory, "web");
 
@@ -40,6 +40,7 @@ namespace HTCommander
             if (enabled == 1)
             {
                 port = broker.GetValue<int>(0, "WebServerPort", 8080);
+                tlsEnabled = broker.GetValue<int>(0, "TlsEnabled", 0) == 1;
                 Start();
             }
         }
@@ -48,18 +49,21 @@ namespace HTCommander
         {
             int enabled = broker.GetValue<int>(0, "WebServerEnabled", 0);
             int newPort = broker.GetValue<int>(0, "WebServerPort", 8080);
+            bool newTls = broker.GetValue<int>(0, "TlsEnabled", 0) == 1;
 
             if (enabled == 1)
             {
-                if (running && newPort != port)
+                if (running && (newPort != port || newTls != tlsEnabled))
                 {
                     Stop();
                     port = newPort;
+                    tlsEnabled = newTls;
                     Start();
                 }
                 else if (!running)
                 {
                     port = newPort;
+                    tlsEnabled = newTls;
                     Start();
                 }
             }
@@ -74,15 +78,31 @@ namespace HTCommander
             if (running) return;
             try
             {
-                cts = new CancellationTokenSource();
-                listener = new HttpListener();
                 int bindAll = broker.GetValue<int>(0, "ServerBindAll", 0);
-                string host = (bindAll == 1) ? "*" : "localhost";
-                listener.Prefixes.Add("http://" + host + ":" + port + "/");
-                listener.Start();
+                X509Certificate2 cert = null;
+
+                if (tlsEnabled)
+                {
+                    string configDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "HTCommander");
+                    cert = TlsCertificateManager.GetOrCreateCertificate(configDir);
+                }
+
+                server = new TlsHttpServer(
+                    port,
+                    bindAll == 1,
+                    tlsEnabled,
+                    cert,
+                    HandleRequest,
+                    "/ws/audio",
+                    HandleWebSocketAsync,
+                    Log);
+
+                server.Start();
                 running = true;
-                serverTask = Task.Run(() => AcceptRequestsAsync(cts.Token), cts.Token);
-                Log("Web server started on port " + port);
+                string protocol = tlsEnabled ? "HTTPS" : "HTTP";
+                Log("Web server started on port " + port + " (" + protocol + ")");
             }
             catch (Exception ex)
             {
@@ -97,140 +117,76 @@ namespace HTCommander
             Log("Web server stopping...");
             running = false;
             audioBridge?.DisconnectAll();
-            cts?.Cancel();
-
-            try { listener?.Stop(); } catch { }
-            try { listener?.Close(); } catch { }
-
-            try { serverTask?.Wait(TimeSpan.FromSeconds(3)); }
-            catch (AggregateException) { }
-            catch (OperationCanceledException) { }
-
-            cts?.Dispose();
-            cts = null;
-            serverTask = null;
-            listener = null;
+            server?.Stop();
+            server = null;
             Log("Web server stopped");
         }
 
-        private async Task AcceptRequestsAsync(CancellationToken ct)
+        private async Task HandleWebSocketAsync(WebSocket ws, CancellationToken ct)
         {
-            try
-            {
-                while (!ct.IsCancellationRequested)
-                {
-                    HttpListenerContext context = await listener.GetContextAsync();
-                    _ = Task.Run(() => HandleRequest(context), ct);
-                }
-            }
-            catch (HttpListenerException) { }
-            catch (ObjectDisposedException) { }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                Log("Web server accept loop error: " + ex.Message);
-            }
+            await audioBridge.HandleWebSocketAsync(ws, ct);
         }
 
-        private void HandleRequest(HttpListenerContext context)
+        private TlsHttpServer.HttpResponse HandleRequest(TlsHttpServer.HttpRequest request)
         {
-            // WebSocket upgrade must be handled before the try/finally that closes the response stream
-            if (context.Request.IsWebSocketRequest)
+            string urlPath = request.Path;
+
+            // API endpoint: return config for mobile web UI
+            if (urlPath == "/api/config")
             {
-                if (context.Request.Url.AbsolutePath == "/ws/audio")
+                int mcpPort = broker.GetValue<int>(0, "McpServerPort", 5678);
+                int mcpEnabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
+                string json = "{\"mcpPort\":" + mcpPort +
+                              ",\"mcpEnabled\":" + (mcpEnabled == 1 ? "true" : "false") +
+                              ",\"tlsEnabled\":" + (tlsEnabled ? "true" : "false") + "}";
+                var resp = new TlsHttpServer.HttpResponse
                 {
-                    _ = Task.Run(async () =>
-                    {
-                        try
-                        {
-                            var wsContext = await context.AcceptWebSocketAsync(null);
-                            await audioBridge.HandleWebSocketAsync(wsContext, cts?.Token ?? CancellationToken.None);
-                        }
-                        catch (Exception ex) { Log("WebSocket error: " + ex.Message); }
-                    });
-                    return; // Don't close response — WebSocket owns the connection
-                }
-                else
-                {
-                    try { SendResponse(context, 404, "404 - Not Found"); } catch { }
-                    try { context.Response.OutputStream.Close(); } catch { }
-                    return;
-                }
+                    StatusCode = 200,
+                    StatusText = "OK",
+                    ContentType = "application/json",
+                    Body = Encoding.UTF8.GetBytes(json)
+                };
+                resp.Headers["Access-Control-Allow-Origin"] = "*";
+                return resp;
             }
 
-            try
+            if (urlPath == "/") urlPath = "/index.html";
+
+            string relativePath = Uri.UnescapeDataString(urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
+
+            // Security: prevent path traversal
+            if (relativePath.Contains(".."))
             {
-                string urlPath = context.Request.Url.AbsolutePath;
-
-                // API endpoint: return config for mobile web UI
-                if (urlPath == "/api/config")
-                {
-                    int mcpPort = broker.GetValue<int>(0, "McpServerPort", 5678);
-                    int mcpEnabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
-                    string json = "{\"mcpPort\":" + mcpPort + ",\"mcpEnabled\":" + (mcpEnabled == 1 ? "true" : "false") + "}";
-                    context.Response.Headers.Add("Access-Control-Allow-Origin", "*");
-                    context.Response.ContentType = "application/json";
-                    byte[] buffer = Encoding.UTF8.GetBytes(json);
-                    context.Response.ContentLength64 = buffer.Length;
-                    context.Response.StatusCode = 200;
-                    context.Response.OutputStream.Write(buffer, 0, buffer.Length);
-                    return;
-                }
-
-                if (urlPath == "/") urlPath = "/index.html";
-
-                string relativePath = Uri.UnescapeDataString(urlPath.TrimStart('/').Replace('/', Path.DirectorySeparatorChar));
-
-                // Security: prevent path traversal
-                if (relativePath.Contains(".."))
-                {
-                    SendResponse(context, 400, "400 - Bad Request");
-                    return;
-                }
-
-                string filePath = Path.Combine(webRoot, relativePath);
-
-                // Ensure path stays within web root
-                string fullPath = Path.GetFullPath(filePath);
-                string fullWebRoot = Path.GetFullPath(webRoot);
-                if (!fullPath.StartsWith(fullWebRoot, StringComparison.OrdinalIgnoreCase))
-                {
-                    SendResponse(context, 403, "403 - Forbidden");
-                    return;
-                }
-
-                if (File.Exists(filePath))
-                {
-                    byte[] fileBytes = File.ReadAllBytes(filePath);
-                    string mimeType = GetMimeType(filePath);
-
-                    context.Response.ContentType = mimeType;
-                    context.Response.ContentLength64 = fileBytes.Length;
-                    context.Response.StatusCode = 200;
-                    context.Response.OutputStream.Write(fileBytes, 0, fileBytes.Length);
-                }
-                else
-                {
-                    SendResponse(context, 404, "404 - File Not Found");
-                }
+                return new TlsHttpServer.HttpResponse(400, "400 - Bad Request");
             }
-            catch (Exception)
+
+            string filePath = Path.Combine(webRoot, relativePath);
+
+            // Ensure path stays within web root
+            string fullPath = Path.GetFullPath(filePath);
+            string fullWebRoot = Path.GetFullPath(webRoot);
+            if (!fullPath.StartsWith(fullWebRoot, StringComparison.OrdinalIgnoreCase))
             {
-                try { SendResponse(context, 500, "500 - Internal Server Error"); } catch { }
+                return new TlsHttpServer.HttpResponse(403, "403 - Forbidden");
             }
-            finally
-            {
-                try { context.Response.OutputStream.Close(); } catch { }
-            }
-        }
 
-        private void SendResponse(HttpListenerContext context, int statusCode, string body)
-        {
-            context.Response.StatusCode = statusCode;
-            context.Response.ContentType = "text/plain";
-            byte[] buffer = Encoding.UTF8.GetBytes(body);
-            context.Response.ContentLength64 = buffer.Length;
-            context.Response.OutputStream.Write(buffer, 0, buffer.Length);
+            if (File.Exists(filePath))
+            {
+                byte[] fileBytes = File.ReadAllBytes(filePath);
+                string mimeType = GetMimeType(filePath);
+
+                return new TlsHttpServer.HttpResponse
+                {
+                    StatusCode = 200,
+                    StatusText = "OK",
+                    ContentType = mimeType,
+                    Body = fileBytes
+                };
+            }
+            else
+            {
+                return new TlsHttpServer.HttpResponse(404, "404 - File Not Found");
+            }
         }
 
         private string GetMimeType(string filePath)

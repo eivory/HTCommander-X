@@ -392,7 +392,8 @@ function setupToggle(toggleId, sectionId, stateKey) {
 // ---- WebSocket Audio ----
 
 function connectAudioWebSocket() {
-    const wsUrl = 'ws://' + window.location.hostname + ':' + window.location.port + '/ws/audio';
+    const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const wsUrl = wsProto + '//' + window.location.hostname + ':' + window.location.port + '/ws/audio';
     let ws;
     try { ws = new WebSocket(wsUrl); } catch (e) { return; }
     ws.binaryType = 'arraybuffer';

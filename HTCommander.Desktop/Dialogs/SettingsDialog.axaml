@@ -95,6 +95,11 @@
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Spacing="16" Margin="12">
                     <CheckBox Name="ServerBindAllCheck" Content="Allow remote access (bind to all network interfaces)" />
+                    <StackPanel Spacing="4">
+                        <CheckBox Name="TlsEnabledCheck" Content="Enable TLS/HTTPS (required for mobile microphone over LAN)" />
+                        <TextBlock Text="Generates a self-signed certificate. Accept the browser security warning on first connect."
+                                   Foreground="{DynamicResource SecondaryText}" FontSize="11" Margin="24,0,0,0" TextWrapping="Wrap" />
+                    </StackPanel>
                     <StackPanel Spacing="6">
                         <CheckBox Name="WebServerCheck" Content="Enable Web Server" />
                         <Grid ColumnDefinitions="110,*" Margin="24,0,0,0">

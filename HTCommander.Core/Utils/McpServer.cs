@@ -10,7 +10,7 @@ http://www.apache.org/licenses/LICENSE-2.0
 
 using System;
 using System.IO;
-using System.Net;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,14 +25,13 @@ namespace HTCommander
     public class McpServer : IDisposable
     {
         private DataBrokerClient broker;
-        private HttpListener listener;
-        private CancellationTokenSource cts;
-        private Task serverTask;
+        private TlsHttpServer server;
         private McpProtocolHandler protocolHandler;
         private McpTools tools;
         private McpResources resources;
         private int port;
         private bool running = false;
+        private bool tlsEnabled = false;
 
         public McpServer()
         {
@@ -45,11 +44,13 @@ namespace HTCommander
             broker.Subscribe(0, "McpServerPort", OnSettingChanged);
             broker.Subscribe(0, "McpDebugToolsEnabled", OnSettingChanged);
             broker.Subscribe(0, "ServerBindAll", OnSettingChanged);
+            broker.Subscribe(0, "TlsEnabled", OnSettingChanged);
 
             int enabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
             if (enabled == 1)
             {
                 port = broker.GetValue<int>(0, "McpServerPort", 5678);
+                tlsEnabled = broker.GetValue<int>(0, "TlsEnabled", 0) == 1;
                 Start();
             }
         }
@@ -58,18 +59,21 @@ namespace HTCommander
         {
             int enabled = broker.GetValue<int>(0, "McpServerEnabled", 0);
             int newPort = broker.GetValue<int>(0, "McpServerPort", 5678);
+            bool newTls = broker.GetValue<int>(0, "TlsEnabled", 0) == 1;
 
             if (enabled == 1)
             {
-                if (running && newPort != port)
+                if (running && (newPort != port || newTls != tlsEnabled))
                 {
                     Stop();
                     port = newPort;
+                    tlsEnabled = newTls;
                     Start();
                 }
                 else if (!running)
                 {
                     port = newPort;
+                    tlsEnabled = newTls;
                     Start();
                 }
             }
@@ -84,15 +88,31 @@ namespace HTCommander
             if (running) return;
             try
             {
-                cts = new CancellationTokenSource();
-                listener = new HttpListener();
                 int bindAll = broker.GetValue<int>(0, "ServerBindAll", 0);
-                string host = (bindAll == 1) ? "*" : "localhost";
-                listener.Prefixes.Add("http://" + host + ":" + port + "/");
-                listener.Start();
+                X509Certificate2 cert = null;
+
+                if (tlsEnabled)
+                {
+                    string configDir = Path.Combine(
+                        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                        "HTCommander");
+                    cert = TlsCertificateManager.GetOrCreateCertificate(configDir);
+                }
+
+                server = new TlsHttpServer(
+                    port,
+                    bindAll == 1,
+                    tlsEnabled,
+                    cert,
+                    HandleRequest,
+                    null, // No WebSocket support
+                    null,
+                    Log);
+
+                server.Start();
                 running = true;
-                serverTask = Task.Run(() => AcceptRequestsAsync(cts.Token), cts.Token);
-                Log("MCP server started on port " + port);
+                string protocol = tlsEnabled ? "HTTPS" : "HTTP";
+                Log("MCP server started on port " + port + " (" + protocol + ")");
             }
             catch (Exception ex)
             {
@@ -106,112 +126,68 @@ namespace HTCommander
             if (!running) return;
             Log("MCP server stopping...");
             running = false;
-            cts?.Cancel();
-
-            try { listener?.Stop(); } catch { }
-            try { listener?.Close(); } catch { }
-
-            try { serverTask?.Wait(TimeSpan.FromSeconds(3)); }
-            catch (AggregateException) { }
-            catch (OperationCanceledException) { }
-
-            cts?.Dispose();
-            cts = null;
-            serverTask = null;
-            listener = null;
+            server?.Stop();
+            server = null;
             Log("MCP server stopped");
         }
 
-        private async Task AcceptRequestsAsync(CancellationToken ct)
+        private TlsHttpServer.HttpResponse HandleRequest(TlsHttpServer.HttpRequest request)
         {
+            var response = new TlsHttpServer.HttpResponse();
+
+            // Add CORS headers
+            response.Headers["Access-Control-Allow-Origin"] = "*";
+            response.Headers["Access-Control-Allow-Methods"] = "POST, OPTIONS";
+            response.Headers["Access-Control-Allow-Headers"] = "Content-Type";
+
+            // Handle preflight
+            if (request.Method == "OPTIONS")
+            {
+                response.StatusCode = 204;
+                response.StatusText = "No Content";
+                return response;
+            }
+
+            // Only accept POST
+            if (request.Method != "POST")
+            {
+                response.StatusCode = 405;
+                response.StatusText = "Method Not Allowed";
+                response.ContentType = "application/json";
+                response.Body = Encoding.UTF8.GetBytes("{\"error\":\"Method not allowed. Use POST.\"}");
+                return response;
+            }
+
             try
             {
-                while (!ct.IsCancellationRequested)
-                {
-                    HttpListenerContext context = await listener.GetContextAsync();
-                    // Handle each request on the thread pool
-                    _ = Task.Run(() => HandleRequestAsync(context), ct);
-                }
-            }
-            catch (HttpListenerException) { }
-            catch (ObjectDisposedException) { }
-            catch (OperationCanceledException) { }
-            catch (Exception ex)
-            {
-                Log("MCP accept loop error: " + ex.Message);
-            }
-        }
-
-        private async Task HandleRequestAsync(HttpListenerContext context)
-        {
-            var request = context.Request;
-            var response = context.Response;
-
-            try
-            {
-                // Add CORS headers
-                response.Headers.Add("Access-Control-Allow-Origin", "*");
-                response.Headers.Add("Access-Control-Allow-Methods", "POST, OPTIONS");
-                response.Headers.Add("Access-Control-Allow-Headers", "Content-Type");
-
-                // Handle preflight
-                if (request.HttpMethod == "OPTIONS")
-                {
-                    response.StatusCode = 204;
-                    response.Close();
-                    return;
-                }
-
-                // Only accept POST
-                if (request.HttpMethod != "POST")
-                {
-                    response.StatusCode = 405;
-                    byte[] errBytes = Encoding.UTF8.GetBytes("{\"error\":\"Method not allowed. Use POST.\"}");
-                    response.ContentType = "application/json";
-                    response.ContentLength64 = errBytes.Length;
-                    await response.OutputStream.WriteAsync(errBytes, 0, errBytes.Length);
-                    response.Close();
-                    return;
-                }
-
                 // Read request body
-                string requestBody;
-                using (var reader = new StreamReader(request.InputStream, Encoding.UTF8))
-                {
-                    requestBody = await reader.ReadToEndAsync();
-                }
+                string requestBody = request.Body != null ? Encoding.UTF8.GetString(request.Body) : "";
 
                 // Process JSON-RPC request
                 string responseBody = protocolHandler.ProcessRequest(requestBody);
 
                 if (responseBody == null)
                 {
-                    // Notification — no response needed (but HTTP requires something)
+                    // Notification — no response needed
                     response.StatusCode = 204;
-                    response.Close();
-                    return;
+                    response.StatusText = "No Content";
+                    return response;
                 }
 
-                // Write response
-                byte[] responseBytes = Encoding.UTF8.GetBytes(responseBody);
+                response.StatusCode = 200;
+                response.StatusText = "OK";
                 response.ContentType = "application/json";
-                response.ContentLength64 = responseBytes.Length;
-                await response.OutputStream.WriteAsync(responseBytes, 0, responseBytes.Length);
-                response.Close();
+                response.Body = Encoding.UTF8.GetBytes(responseBody);
+                return response;
             }
             catch (Exception ex)
             {
                 Log("MCP request error: " + ex.Message);
-                try
-                {
-                    response.StatusCode = 500;
-                    byte[] errBytes = Encoding.UTF8.GetBytes("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal server error\"}}");
-                    response.ContentType = "application/json";
-                    response.ContentLength64 = errBytes.Length;
-                    await response.OutputStream.WriteAsync(errBytes, 0, errBytes.Length);
-                    response.Close();
-                }
-                catch { }
+                response.StatusCode = 500;
+                response.StatusText = "Internal Server Error";
+                response.ContentType = "application/json";
+                response.Body = Encoding.UTF8.GetBytes("{\"jsonrpc\":\"2.0\",\"error\":{\"code\":-32603,\"message\":\"Internal server error\"}}");
+                return response;
             }
         }
 

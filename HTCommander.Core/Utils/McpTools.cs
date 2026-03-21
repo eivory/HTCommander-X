@@ -26,7 +26,7 @@ namespace HTCommander
         {
             "CallSign", "StationId", "AllowTransmit", "Theme", "CheckForUpdates",
             "VoiceLanguage", "Voice", "SpeechToText", "MicGain", "OutputVolume",
-            "ServerBindAll", "WebServerEnabled", "WebServerPort",
+            "ServerBindAll", "TlsEnabled", "WebServerEnabled", "WebServerPort",
             "McpServerEnabled", "McpServerPort", "McpDebugToolsEnabled",
             "RigctldServerEnabled", "RigctldServerPort", "CatServerEnabled",
             "AgwpeServerEnabled", "AgwpeServerPort", "VirtualAudioEnabled",

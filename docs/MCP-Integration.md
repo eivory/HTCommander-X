@@ -24,7 +24,7 @@ All four files are in `HTCommander.Core/Utils/`:
 
 | File | Purpose | Lines |
 |------|---------|-------|
-| `McpServer.cs` | Data handler with `HttpListener` lifecycle. Follows the same self-initializing pattern as `RigctldServer.cs`: subscribes to `McpServerEnabled` / `McpServerPort` / `McpDebugToolsEnabled` / `ServerBindAll` on device 0, auto-starts/stops an HTTP listener on the configured port (default 5678). Binds to `localhost` by default; when `ServerBindAll` is 1, binds to all interfaces (`http://*:{port}/`) for LAN access. | ~227 |
+| `McpServer.cs` | Data handler with `TlsHttpServer` lifecycle. Follows the same self-initializing pattern as `RigctldServer.cs`: subscribes to `McpServerEnabled` / `McpServerPort` / `McpDebugToolsEnabled` / `ServerBindAll` / `TlsEnabled` on device 0, auto-starts/stops an HTTP(S) server on the configured port (default 5678). Binds to `localhost` by default; when `ServerBindAll` is 1, binds to all interfaces for LAN access. When `TlsEnabled` is 1, serves over HTTPS with a self-signed certificate. | ~190 |
 | `McpJsonRpc.cs` | JSON-RPC 2.0 message types (`JsonRpcRequest`, `JsonRpcResponse`, `JsonRpcError`) and MCP protocol dispatcher (`McpProtocolHandler`). Routes `initialize`, `tools/list`, `tools/call`, `resources/list`, `resources/read` methods. Also defines MCP data model classes: `McpToolDefinition`, `McpToolInputSchema`, `McpToolProperty`, `McpResourceDefinition`, `McpResourceContent`, `McpToolContent`. | ~270 |
 | `McpTools.cs` | Tool definitions and implementations (39 tools). Each tool maps to `DataBroker.GetValue()` or `DataBroker.Dispatch()` calls. Contains `GetToolDefinitions()` (returns JSON Schema for each tool) and `CallTool(name, arguments)` (dispatches to the right handler method). Includes PTT state management with silence keepalive timer, scratch channel frequency tuning, DTMF PCM generation, and whitelist-validated settings access. | ~1100 |
 | `McpResources.cs` | Resource definitions and readers. Resources are read-only state exposed as JSON. Dynamically lists per-radio resources based on connected radios. Contains `GetResourceDefinitions()` and `ReadResource(uri)`. | ~270 |
@@ -95,7 +95,7 @@ All four files are in `HTCommander.Core/Utils/`:
 | `get_setting` | Read a whitelisted application setting | `DataBroker.GetValue(0, name)` — validates name against `SettingsWhitelist` |
 | `set_setting` | Write a whitelisted application setting | `DataBroker.Dispatch(0, name, value)` — validates name, parses int if numeric |
 
-Whitelisted settings: `CallSign`, `StationId`, `AllowTransmit`, `Theme`, `CheckForUpdates`, `VoiceLanguage`, `Voice`, `SpeechToText`, `MicGain`, `OutputVolume`, `ServerBindAll`, `WebServerEnabled`, `WebServerPort`, `McpServerEnabled`, `McpServerPort`, `McpDebugToolsEnabled`, `RigctldServerEnabled`, `RigctldServerPort`, `CatServerEnabled`, `AgwpeServerEnabled`, `AgwpeServerPort`, `VirtualAudioEnabled`, `WinlinkPassword`, `WinlinkUseStationId`, `AirplaneServer`, `RepeaterBookCountry`, `RepeaterBookState`, `ShowAllChannels`, `ShowAirplanesOnMap`, `SoftwareModemMode`, `AudioOutputDevice`, `AudioInputDevice`.
+Whitelisted settings: `CallSign`, `StationId`, `AllowTransmit`, `Theme`, `CheckForUpdates`, `VoiceLanguage`, `Voice`, `SpeechToText`, `MicGain`, `OutputVolume`, `ServerBindAll`, `TlsEnabled`, `WebServerEnabled`, `WebServerPort`, `McpServerEnabled`, `McpServerPort`, `McpDebugToolsEnabled`, `RigctldServerEnabled`, `RigctldServerPort`, `CatServerEnabled`, `AgwpeServerEnabled`, `AgwpeServerPort`, `VirtualAudioEnabled`, `WinlinkPassword`, `WinlinkUseStationId`, `AirplaneServer`, `RepeaterBookCountry`, `RepeaterBookState`, `ShowAllChannels`, `ShowAirplanesOnMap`, `SoftwareModemMode`, `AudioOutputDevice`, `AudioInputDevice`.
 
 **Debug Tools (5, only available when `McpDebugToolsEnabled` is 1):**
 
@@ -127,10 +127,12 @@ Radio resources are generated dynamically — one set per connected radio.
 | `McpServerEnabled` | int (0/1) | 0 | Enable/disable the MCP HTTP server |
 | `McpServerPort` | int | 5678 | TCP port for the HTTP listener |
 | `McpDebugToolsEnabled` | int (0/1) | 0 | Enable/disable debug tools (DataBroker inspection, event dispatch) |
+| `TlsEnabled` | int (0/1) | 0 | Enable TLS/HTTPS for WebServer and McpServer (shared setting) |
 
 ### Protocol Details
 
-- **Transport**: HTTP on `localhost:{port}` (not `0.0.0.0` — local only)
+- **Transport**: HTTP or HTTPS on `localhost:{port}` (when `ServerBindAll` is 1, binds to all interfaces for LAN access)
+- **TLS**: When `TlsEnabled` is 1, uses `TcpListener` + `SslStream` with a self-signed certificate (auto-generated, stored as PFX in config directory). Required for mobile `getUserMedia()` mic access over LAN.
 - **Method**: `POST` to any path (e.g., `/`, `/mcp`)
 - **Content-Type**: `application/json` (JSON-RPC 2.0)
 - **CORS**: `Access-Control-Allow-Origin: *` (for browser-based MCP clients)

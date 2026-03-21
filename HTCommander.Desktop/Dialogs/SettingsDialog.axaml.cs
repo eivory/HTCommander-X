@@ -94,6 +94,7 @@ namespace HTCommander.Desktop.Dialogs
 
             // Servers
             ServerBindAllCheck.IsChecked = DataBroker.GetValue<int>(0, "ServerBindAll", 0) == 1;
+            TlsEnabledCheck.IsChecked = DataBroker.GetValue<int>(0, "TlsEnabled", 0) == 1;
             WebServerCheck.IsChecked = DataBroker.GetValue<int>(0, "WebServerEnabled", 0) == 1;
             WebPortUpDown.Value = DataBroker.GetValue<int>(0, "WebServerPort", 8080);
             AgwpeServerCheck.IsChecked = DataBroker.GetValue<int>(0, "AgwpeServerEnabled", 0) == 1;
@@ -296,6 +297,7 @@ namespace HTCommander.Desktop.Dialogs
 
             // Servers
             DataBroker.Dispatch(0, "ServerBindAll", ServerBindAllCheck.IsChecked == true ? 1 : 0);
+            DataBroker.Dispatch(0, "TlsEnabled", TlsEnabledCheck.IsChecked == true ? 1 : 0);
             DataBroker.Dispatch(0, "WebServerEnabled", WebServerCheck.IsChecked == true ? 1 : 0);
             DataBroker.Dispatch(0, "WebServerPort", (int)(WebPortUpDown.Value ?? 8080));
             DataBroker.Dispatch(0, "AgwpeServerEnabled", AgwpeServerCheck.IsChecked == true ? 1 : 0);
