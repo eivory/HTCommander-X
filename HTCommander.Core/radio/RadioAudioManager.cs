@@ -62,7 +62,7 @@ namespace HTCommander
         private CancellationTokenSource transmissionTokenSource = null;
         private TaskCompletionSource<bool> newDataAvailable = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         private readonly object newDataLock = new object();
-        private bool PlayInputBack = false;
+        private volatile bool PlayInputBack = false;
         private byte[] ReminderTransmitPcmAudio = null;
         private volatile bool VoiceTransmitCancel = false;
 
@@ -228,16 +228,18 @@ namespace HTCommander
 
         public void Stop()
         {
+            Task taskToWait = null;
             lock (connectionLock)
             {
                 if (!running && audioLoopTask == null) return;
                 running = false;
+                taskToWait = audioLoopTask;
                 try { audioLoopCts?.Cancel(); } catch (Exception ex) { Debug($"Stop.Cancel: {ex.Message}"); }
             }
 
-            if (audioLoopTask != null)
+            if (taskToWait != null)
             {
-                try { audioLoopTask.Wait(TimeSpan.FromSeconds(3)); } catch (Exception ex) { Debug($"Stop.Wait: {ex.Message}"); }
+                try { taskToWait.Wait(TimeSpan.FromSeconds(3)); } catch (Exception ex) { Debug($"Stop.Wait: {ex.Message}"); }
             }
 
             lock (connectionLock)
@@ -455,7 +457,8 @@ namespace HTCommander
 
         public bool TransmitVoice(byte[] pcmInputData, int pcmOffset, int pcmLength, bool play)
         {
-            if (transport == null || !transport.IsConnected) return false;
+            // Check transport under lock and capture reference to avoid TOCTOU race
+            lock (connectionLock) { if (!running || transport == null) return false; }
 
             PlayInputBack = play;
             VoiceTransmitCancel = false;

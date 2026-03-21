@@ -144,14 +144,13 @@ namespace HTCommander
                 if (bindAllSetting == 1 && !string.IsNullOrEmpty(mcpToken))
                 {
                     string authHeader = request.Headers != null && request.Headers.ContainsKey("Authorization") ? request.Headers["Authorization"] : null;
-                    bool authValid = false;
-                    if (authHeader != null && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-                    {
-                        string providedToken = authHeader.Substring(7).Trim();
-                        byte[] providedBytes = Encoding.UTF8.GetBytes(providedToken);
-                        byte[] expectedBytes = Encoding.UTF8.GetBytes(mcpToken);
-                        authValid = System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(providedBytes, expectedBytes);
-                    }
+                    // Constant-time comparison of full "Bearer <token>" string to prevent timing leaks
+                    string expectedAuth = "Bearer " + mcpToken;
+                    bool authValid = authHeader != null &&
+                        authHeader.Length == expectedAuth.Length &&
+                        System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(
+                            Encoding.UTF8.GetBytes(authHeader),
+                            Encoding.UTF8.GetBytes(expectedAuth));
                     if (!authValid)
                     {
                         return new TlsHttpServer.HttpResponse(401, "401 - Unauthorized");

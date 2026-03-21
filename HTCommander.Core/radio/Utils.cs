@@ -112,12 +112,12 @@ namespace HTCommander
 
         public static int GetShort(byte[] d, int p)
         {
-            if (d == null || p < 0 || p + 1 >= d.Length) throw new ArgumentException($"GetShort: bounds check failed (len={d?.Length}, pos={p})");
+            if (d == null || p < 0 || p + 1 >= d.Length) throw new ArgumentException("GetShort: bounds check failed");
             return ((int)d[p] << 8) + (int)d[p + 1];
         }
         public static int GetInt(byte[] d, int p)
         {
-            if (d == null || p < 0 || p + 3 >= d.Length) throw new ArgumentException($"GetInt: bounds check failed (len={d?.Length}, pos={p})");
+            if (d == null || p < 0 || p + 3 >= d.Length) throw new ArgumentException("GetInt: bounds check failed");
             return ((int)d[p] << 24) + (int)(d[p + 1] << 16) + (int)(d[p + 2] << 8) + (int)d[p + 3];
         }
         public static void SetShort(byte[] d, int p, int v) { d[p] = (byte)((v >> 8) & 0xFF); d[p + 1] = (byte)(v & 0xFF); }

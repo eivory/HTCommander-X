@@ -829,7 +829,7 @@ namespace HTCommander
                         string fullPath = Path.GetFullPath(Path.Combine(_attachmentsPath, relativePath));
 
                         // Validate path stays within attachments directory (prevent path traversal from DB)
-                        if (!fullPath.StartsWith(_attachmentsPath + Path.DirectorySeparatorChar) && fullPath != _attachmentsPath)
+                        if (!fullPath.StartsWith(_attachmentsPath + Path.DirectorySeparatorChar))
                             continue;
 
                         var attachment = new WinLinkMailAttachement { Name = filename };
@@ -861,7 +861,7 @@ namespace HTCommander
                         string fullPath = Path.GetFullPath(Path.Combine(_attachmentsPath, relativePath));
 
                         // Validate path stays within attachments directory (prevent path traversal from DB)
-                        if (!fullPath.StartsWith(_attachmentsPath + Path.DirectorySeparatorChar) && fullPath != _attachmentsPath)
+                        if (!fullPath.StartsWith(_attachmentsPath + Path.DirectorySeparatorChar))
                             continue;
 
                         if (File.Exists(fullPath))

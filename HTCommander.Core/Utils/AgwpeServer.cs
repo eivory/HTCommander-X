@@ -555,8 +555,16 @@ namespace HTCommander
             this.stream = client.GetStream();
             this.server = server;
 
-            Task.Run(ProcessSendQueueAsync, cts.Token);
-            Task.Run(ReceiveLoopAsync, cts.Token);
+            try
+            {
+                Task.Run(ProcessSendQueueAsync, cts.Token);
+                Task.Run(ReceiveLoopAsync, cts.Token);
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
         }
 
         private const int MaxSendQueueSize = 1000;

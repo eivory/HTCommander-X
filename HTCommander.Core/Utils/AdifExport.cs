@@ -64,8 +64,8 @@ namespace HTCommander
         private static void WriteField(StringBuilder sb, string tag, string value)
         {
             if (string.IsNullOrEmpty(value)) return;
-            // Sanitize: strip '<' to prevent ADIF tag injection
-            value = value.Replace("<", "");
+            // Sanitize: strip '<' and '>' to prevent ADIF tag injection
+            value = value.Replace("<", "").Replace(">", "");
             if (string.IsNullOrEmpty(value)) return;
             sb.Append($"<{tag}:{value.Length}>{value} ");
         }

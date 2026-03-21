@@ -124,7 +124,7 @@ namespace HTCommander
                         // First message must be text: "AUTH:<token>"
                         var authBuffer = new byte[1024];
                         var authResult = await ws.ReceiveAsync(new ArraySegment<byte>(authBuffer), ct);
-                        if (authResult.MessageType == WebSocketMessageType.Text && authResult.Count > 5)
+                        if (authResult.MessageType == WebSocketMessageType.Text && authResult.Count > 5 && authResult.Count <= authBuffer.Length)
                         {
                             string authMsg = Encoding.UTF8.GetString(authBuffer, 0, authResult.Count);
                             if (authMsg.StartsWith("AUTH:"))
@@ -148,15 +148,14 @@ namespace HTCommander
                 }
             }
 
-            if (clients.Count >= MaxClients)
+            if (!clients.TryAdd(clientId, ws) || clients.Count > MaxClients)
             {
+                clients.TryRemove(clientId, out _);
                 Log("WebSocket client rejected: max clients reached (" + MaxClients + ")");
                 try { await ws.CloseAsync(WebSocketCloseStatus.PolicyViolation, "Too many connections", CancellationToken.None); } catch { }
                 try { ws.Dispose(); } catch { }
                 return;
             }
-
-            clients.TryAdd(clientId, ws);
             Log("WebSocket audio client connected: " + clientId.ToString().Substring(0, 8));
 
             try
@@ -288,10 +287,11 @@ namespace HTCommander
 
         private void HandleAudioData(Guid clientId, byte[] buffer, int count)
         {
-            if (pttOwner != clientId) return;
-
-            // Update last audio time for PTT timeout tracking
-            lastAudioFromPttOwner = Environment.TickCount64;
+            lock (pttLock)
+            {
+                if (pttOwner != clientId) return;
+                lastAudioFromPttOwner = Environment.TickCount64;
+            }
 
             // Rate limit: max audio frames per second per client (minimum 5ms between frames)
             // Use atomic update to prevent concurrent frames bypassing the rate limit

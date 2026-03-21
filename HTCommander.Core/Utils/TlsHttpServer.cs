@@ -83,7 +83,7 @@ namespace HTCommander
         private TcpListener tcpListener;
         private CancellationTokenSource cts;
         private Task acceptTask;
-        private bool disposed;
+        private volatile bool disposed;
 
         private const int MaxRequestSize = 1024 * 1024; // 1MB max request
         private const int HeaderReadTimeout = 30000; // 30s to read headers
@@ -119,19 +119,28 @@ namespace HTCommander
             acceptTask = Task.Run(() => AcceptLoopAsync(cts.Token));
         }
 
+        private readonly object stopLock = new object();
+
         public void Stop()
         {
-            cts?.Cancel();
-            try { tcpListener?.Stop(); } catch { }
+            lock (stopLock)
+            {
+                var localCts = cts;
+                var localTask = acceptTask;
+                var localListener = tcpListener;
 
-            try { acceptTask?.Wait(TimeSpan.FromSeconds(3)); }
-            catch (AggregateException) { }
-            catch (OperationCanceledException) { }
+                localCts?.Cancel();
+                try { localListener?.Stop(); } catch { }
 
-            cts?.Dispose();
-            cts = null;
-            acceptTask = null;
-            tcpListener = null;
+                try { localTask?.Wait(TimeSpan.FromSeconds(3)); }
+                catch (AggregateException) { }
+                catch (OperationCanceledException) { }
+
+                localCts?.Dispose();
+                cts = null;
+                acceptTask = null;
+                tcpListener = null;
+            }
         }
 
         private async Task AcceptLoopAsync(CancellationToken ct)

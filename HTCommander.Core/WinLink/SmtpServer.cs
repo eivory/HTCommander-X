@@ -24,11 +24,34 @@ namespace HTCommander
         public readonly int Port;
         private const int MaxSessions = 10;
         private List<SmtpSession> sessions = new List<SmtpSession>();
+        private int globalAuthFailures = 0;
+        private long lastAuthFailureReset = Environment.TickCount64;
+        private readonly object authRateLock = new object();
+        private const int MaxGlobalAuthFailuresPerMinute = 20;
 
         public SmtpServer(int port)
         {
             this.Port = port;
             this.broker = new DataBrokerClient();
+        }
+
+        internal bool CheckGlobalAuthRateLimit()
+        {
+            lock (authRateLock)
+            {
+                long now = Environment.TickCount64;
+                if (now - lastAuthFailureReset > 60000)
+                {
+                    globalAuthFailures = 0;
+                    lastAuthFailureReset = now;
+                }
+                return globalAuthFailures < MaxGlobalAuthFailuresPerMinute;
+            }
+        }
+
+        internal void RecordAuthFailure()
+        {
+            lock (authRateLock) { globalAuthFailures++; }
         }
 
         public void Start()
@@ -306,7 +329,7 @@ namespace HTCommander
 
         private void HandleAuth(string args)
         {
-            if (authAttempts >= MaxAuthAttempts)
+            if (authAttempts >= MaxAuthAttempts || !server.CheckGlobalAuthRateLimit())
             {
                 SendResponse("421 Too many authentication attempts");
                 Close();
@@ -356,11 +379,13 @@ namespace HTCommander
                 }
                 else
                 {
+                    server.RecordAuthFailure();
                     SendResponse("535 Authentication failed");
                 }
             }
             catch (FormatException)
             {
+                server.RecordAuthFailure();
                 SendResponse("501 Malformed AUTH data");
             }
         }

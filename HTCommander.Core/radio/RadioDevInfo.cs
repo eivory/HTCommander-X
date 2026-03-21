@@ -50,6 +50,7 @@ namespace HTCommander
             support_dmr = ((msg[12] & 0x01) != 0);
             channel_count = msg[13];
             freq_range_count = (msg[14] & 0xF0) >> 4;
+            if (freq_range_count > 8) freq_range_count = 8; // Cap at reasonable maximum
         }
     }
 }

@@ -107,7 +107,7 @@ namespace HTCommander.Platform.Linux
                         try { wavData = File.ReadAllBytes(tempFile); }
                         catch (FileNotFoundException) { return null; }
                         catch (IOException) { return null; }
-                        if (wavData.Length < 28) return wavData;
+                        if (wavData.Length < 44) return wavData;
 
                         // Read source sample rate from WAV header (bytes 24-27, little-endian)
                         int srcRate = wavData[24] | (wavData[25] << 8) | (wavData[26] << 16) | (wavData[27] << 24);

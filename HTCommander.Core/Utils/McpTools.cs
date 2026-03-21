@@ -940,6 +940,7 @@ namespace HTCommander
         {
             string message = GetStringArg(args, "message");
             if (string.IsNullOrEmpty(message)) return MakeToolError("Message cannot be empty");
+            if (message.Length > 4096) return MakeToolError("Message too long (max 4096 characters)");
             broker.Dispatch(1, "Chat", message, store: false);
             return MakeToolResult("Chat message sent: " + message);
         }
@@ -1125,6 +1126,7 @@ namespace HTCommander
             int deviceId = GetIntArg(args, "device_id");
             string clipName = GetStringArg(args, "clip_name");
             if (string.IsNullOrEmpty(clipName)) return MakeToolError("Clip name cannot be empty");
+            if (clipName.Length > 256) return MakeToolError("Clip name too long (max 256 characters)");
             broker.Dispatch(deviceId, "PlayAudioClip", clipName, store: false);
             return MakeToolResult("Playing audio clip: " + clipName);
         }
@@ -1140,6 +1142,7 @@ namespace HTCommander
         {
             string clipName = GetStringArg(args, "clip_name");
             if (string.IsNullOrEmpty(clipName)) return MakeToolError("Clip name cannot be empty");
+            if (clipName.Length > 256) return MakeToolError("Clip name too long (max 256 characters)");
             broker.Dispatch(DataBroker.AllDevices, "DeleteAudioClip", clipName, store: false);
             return MakeToolResult("Audio clip deleted: " + clipName);
         }
