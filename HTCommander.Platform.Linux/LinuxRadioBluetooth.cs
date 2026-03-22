@@ -216,10 +216,12 @@ namespace HTCommander.Platform.Linux
 
         private static byte[] GaiaEncode(byte[] cmd)
         {
+            int payloadLen = cmd.Length - 4;
+            if (payloadLen < 0 || payloadLen > 255) return cmd; // GAIA payload length is single byte; reject oversized
             byte[] bytes = new byte[cmd.Length + 4];
             bytes[0] = 0xFF;
             bytes[1] = 0x01;
-            bytes[3] = (byte)(cmd.Length - 4);
+            bytes[3] = (byte)payloadLen;
             Array.Copy(cmd, 0, bytes, 4, cmd.Length);
             return bytes;
         }

@@ -39,6 +39,8 @@ namespace HTCommander
         private readonly DataBrokerClient broker;
         private volatile bool mcpPttActive = false;
         private Timer mcpPttSilenceTimer;
+        private Timer mcpPttTimeoutTimer;
+        private const int McpPttTimeoutMs = 30000;
         private readonly object mcpPttLock = new object();
         private int activeRadioId = -1;
 
@@ -1018,6 +1020,7 @@ namespace HTCommander
                 {
                     mcpPttActive = true;
                     mcpPttSilenceTimer = new Timer(McpPttDispatchSilence, null, 0, 80);
+                    mcpPttTimeoutTimer = new Timer(McpPttTimeoutCallback, null, McpPttTimeoutMs, Timeout.Infinite);
                     broker.Dispatch(1, "ExternalPttState", true, store: false);
                     return MakeToolResult("PTT ON — radio is transmitting");
                 }
@@ -1025,6 +1028,8 @@ namespace HTCommander
                 {
                     mcpPttSilenceTimer?.Dispose();
                     mcpPttSilenceTimer = null;
+                    mcpPttTimeoutTimer?.Dispose();
+                    mcpPttTimeoutTimer = null;
                     mcpPttActive = false;
                     broker.Dispatch(1, "ExternalPttState", false, store: false);
                     return MakeToolResult("PTT OFF — radio stopped transmitting");
@@ -1042,6 +1047,23 @@ namespace HTCommander
             if (radioId < 0) return;
             byte[] silence = new byte[6400]; // 100ms of 32kHz 16-bit mono silence
             broker.Dispatch(radioId, "TransmitVoicePCM", silence, store: false);
+        }
+
+        private void McpPttTimeoutCallback(object state)
+        {
+            lock (mcpPttLock)
+            {
+                if (mcpPttActive)
+                {
+                    broker.LogInfo("MCP PTT auto-released after 30s timeout");
+                    mcpPttSilenceTimer?.Dispose();
+                    mcpPttSilenceTimer = null;
+                    mcpPttTimeoutTimer?.Dispose();
+                    mcpPttTimeoutTimer = null;
+                    mcpPttActive = false;
+                    broker.Dispatch(1, "ExternalPttState", false, store: false);
+                }
+            }
         }
 
         private object CallSetDualWatch(JsonElement args)

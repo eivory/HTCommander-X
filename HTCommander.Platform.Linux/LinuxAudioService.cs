@@ -170,8 +170,9 @@ namespace HTCommander.Platform.Linux
         public void AddSamples(byte[] buffer, int offset, int count)
         {
             if (stream == IntPtr.Zero) return;
+            if (buffer == null || offset < 0 || count < 0 || offset + count > buffer.Length) return;
 
-            // Apply volume
+            // Apply volume with clamping to prevent overflow
             if (Math.Abs(_volume - 1.0f) > 0.01f && _bitsPerSample == 16)
             {
                 byte[] adjusted = new byte[count];
@@ -179,7 +180,10 @@ namespace HTCommander.Platform.Linux
                 for (int i = 0; i < count - 1; i += 2)
                 {
                     short sample = (short)(adjusted[i] | (adjusted[i + 1] << 8));
-                    sample = (short)(sample * _volume);
+                    int amplified = (int)(sample * _volume);
+                    if (amplified > 32767) amplified = 32767;
+                    else if (amplified < -32768) amplified = -32768;
+                    sample = (short)amplified;
                     adjusted[i] = (byte)(sample & 0xFF);
                     adjusted[i + 1] = (byte)((sample >> 8) & 0xFF);
                 }

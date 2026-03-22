@@ -47,7 +47,7 @@ namespace HTCommander
 
         // State
         private volatile bool _isAudioEnabled = false;
-        private volatile bool _disposed = false;
+        private int _disposedFlag = 0;
         private DateTime audioRunStartTime;
         private volatile bool inAudioRun = false;
         private bool inAudioRunIsTransmit = false;
@@ -98,7 +98,7 @@ namespace HTCommander
 
         private void OnTransmitVoicePCM(int deviceId, string name, object data)
         {
-            if (data == null || _disposed) return;
+            if (data == null || _disposedFlag != 0) return;
             // Check transport under lock and capture reference to avoid TOCTOU race
             IRadioAudioTransport xport;
             lock (connectionLock) { if (!running || transport == null) return; xport = transport; }
@@ -928,8 +928,7 @@ namespace HTCommander
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
+            if (Interlocked.Exchange(ref _disposedFlag, 1) != 0) return;
 
             StopRecording();
             Stop();

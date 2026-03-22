@@ -397,8 +397,8 @@ namespace HTCommander
                     if (channelVal is string s) channelName = s;
                 }
 
-                // Validate bounds before processing
-                if (offset < 0 || length < 0 || offset + length > pcmData.Length) return;
+                // Validate bounds before processing (use subtraction to prevent integer overflow)
+                if (offset < 0 || length < 0 || length > pcmData.Length || offset > pcmData.Length - length) return;
 
                 // Process the PCM data
                 ProcessPcmData(deviceId, pcmData, offset, length, channelName);

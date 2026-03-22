@@ -14,7 +14,7 @@
     <!-- RuntimeIdentifier is set via -r flag at publish time; don't pre-declare both here
          as it conflicts with the conditional TFM (Windows TFM can't restore for linux-x64) -->
     <ApplicationIcon>..\assets\HTCommander.ico</ApplicationIcon>
-    <Version>0.2.0</Version>
+    <Version>0.2.1</Version>
   </PropertyGroup>
 
   <ItemGroup>
