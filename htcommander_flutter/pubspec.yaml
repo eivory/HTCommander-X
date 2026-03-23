@@ -1,0 +1,29 @@
+name: htcommander_flutter
+description: "HTCommander-X: Cross-platform ham radio controller for Bluetooth handhelds"
+publish_to: 'none'
+
+version: 0.3.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  google_fonts: ^6.0.0
+  shared_preferences: ^2.3.0
+  # Future dependencies (uncomment when integrating):
+  # flutter_map: ^7.0.0          # Map widget (Phase 7 integration)
+  # latlong2: ^0.9.0             # GPS coordinates
+  # flutter_blue_plus: ^1.35.0   # BLE (Android/iOS)
+  # path_provider: ^2.1.0        # App data directories
+  # sqflite: ^2.4.0              # SQLite (mail store)
+  # crypto: ^3.0.0               # HMAC-SHA256 (APRS auth)
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
