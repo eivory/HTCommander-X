@@ -82,7 +82,7 @@ Note: Flutter SDK is at `~/flutter/bin/flutter` (not on PATH by default).
 
 **Startup**: `WidgetsFlutterBinding.ensureInitialized()` → `SharedPrefsSettingsStore.create()` → `DataBroker.initialize(store)` → `initializeDataHandlers()` → `initializeHandlerPaths(appDataPath)` → `runApp()`.
 
-**App shell** (`app.dart`): Holds `Radio?` and `PlatformServices?`. No top toolbar — sidebar contains branding, frequency display, callsign, and connect/disconnect. Screens in `IndexedStack` (preserves state across tab switches). Sidebar has 8 nav items (Communication, Contacts, Packets, Terminal, BBS, Mail, Torrent, APRS); Logbook/Map/Debug remain in IndexedStack but not in sidebar nav. `_sidebarToScreen` maps sidebar indices to screen indices. MCP `McpConnectRadio`/`McpDisconnectRadio` events wired for remote control.
+**App shell** (`app.dart`): Holds `Radio?` and `PlatformServices?`. No top toolbar — sidebar contains branding, frequency display, callsign, and connect/disconnect. Screens in `IndexedStack` (preserves state across tab switches). Sidebar has 8 nav items (Communication, Contacts, Packets, Terminal, BBS, Mail, Torrent, APRS); Logbook/Map/Debug remain in IndexedStack but not in sidebar nav. `_sidebarToScreen` maps sidebar indices to screen indices. `_directScreenIndex` overrides sidebar mapping for non-sidebar screens. Settings renders as a standalone widget (not overlaid). MCP events: `McpConnectRadio`/`McpDisconnectRadio` for remote radio control, `McpNavigateTo` for screen navigation (publishes `CurrentScreen` on device 1).
 
 **Key directories**:
 - `core/` — DataBroker pub/sub, DataBrokerClient, SharedPreferences SettingsStore
@@ -95,7 +95,7 @@ Note: Flutter SDK is at `~/flutter/bin/flutter` (not on PATH by default).
 - `handlers/` — 20+ DataBroker handlers (FrameDeduplicator, PacketStore, AprsHandler, LogStore, LogFileHandler, MailStore, VoiceHandler, AudioClipHandler, TorrentHandler, BbsHandler, WinlinkClient, WinlinkGatewayRelay, YappTransfer, RepeaterBookClient, ImportUtils, AdifExport, GpsSerialHandler, AirplaneHandler, VirtualAudioBridge, FileDownloader, server stubs on mobile). `winlink_utils.dart` has LZHUF compression, CRC16, checksum, and auth security for B2F protocol.
 - `handlers/adventurer/` — Text adventure game (Easter egg)
 - `dialogs/` — 42 dialog widgets (APRS, radio config, channel editor, SSTV send, spectrogram, RepeaterBook, mail, beacon/ident settings, station selector, etc.)
-- `servers/` — MCP (39 tools on desktop), Web (HTTP/HTTPS + WebSocket audio), Rigctld, AGWPE, SMTP, IMAP, CAT Serial (TS-2000), TLS Certificate Manager. All real on desktop, stubs on mobile.
+- `servers/` — MCP (41 tools on desktop, including `navigate_to`/`get_current_screen`), Web (HTTP/HTTPS + WebSocket audio), Rigctld, AGWPE, SMTP, IMAP, CAT Serial (TS-2000), TLS Certificate Manager. All real on desktop, stubs on mobile.
 - `platform/` — Abstract interfaces: `PlatformServices` (factory, `bluetooth_service.dart`), `AudioOutput`/`MicCapture` (`audio_service.dart`), `SpeechService`, `WhisperEngine`. `PlatformServices.instance` static provides global access.
 - `platform/linux/` — dart:ffi RFCOMM Bluetooth (Isolate), audio I/O (paplay/parecord), LinuxSpeechService (espeak-ng), LinuxWhisperEngine (whisper-cli subprocess), LinuxVirtualAudioProvider (PulseAudio virtual devices)
 - `platform/windows/` — dart:ffi Winsock2 RFCOMM Bluetooth (Isolate), waveOut/waveIn audio, PowerShell TTS (System.Speech), whisper-cli STT

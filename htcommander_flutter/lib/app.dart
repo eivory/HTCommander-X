@@ -51,6 +51,7 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _selectedSidebarIndex = 0;
   bool _showSettings = false;
+  int? _directScreenIndex; // For non-sidebar screens (logbook, map, debug)
 
   // Sidebar → IndexedStack screen mapping
   // Sidebar: Communication(0), Contacts(1), Packets(2), Terminal(3),
@@ -97,14 +98,10 @@ class _AppShellState extends State<AppShell> {
   ];
 
   Widget _buildScreenArea() {
-    return Stack(
-      children: [
-        IndexedStack(
-          index: _showSettings ? 0 : _sidebarToScreen[_selectedSidebarIndex],
-          children: _screens,
-        ),
-        if (_showSettings) const SettingsScreen(),
-      ],
+    if (_showSettings) return const SettingsScreen();
+    return IndexedStack(
+      index: _directScreenIndex ?? _sidebarToScreen[_selectedSidebarIndex],
+      children: _screens,
     );
   }
 
@@ -129,6 +126,10 @@ class _AppShellState extends State<AppShell> {
     // MCP remote control
     _broker.subscribe(1, 'McpConnectRadio', _onMcpConnect);
     _broker.subscribe(1, 'McpDisconnectRadio', _onMcpDisconnect);
+    _broker.subscribe(1, 'McpNavigateTo', _onMcpNavigate);
+
+    // Publish initial screen
+    DataBroker.dispatch(1, 'CurrentScreen', 'communication');
   }
 
   void _initPlatformServices() {
@@ -226,6 +227,44 @@ class _AppShellState extends State<AppShell> {
   void _onMcpDisconnect(int deviceId, String name, Object? data) {
     if (!_isConnected && !_isConnecting) return;
     _disconnectRadio();
+  }
+
+  // Screen name → sidebar index mapping (null = not a sidebar item)
+  static const _screenToSidebar = <String, int>{
+    'communication': 0, 'contacts': 1, 'packets': 2, 'terminal': 3,
+    'bbs': 4, 'mail': 5, 'torrent': 6, 'aprs': 7,
+  };
+  // Screen name → IndexedStack index for non-sidebar screens
+  static const _screenToStack = <String, int>{
+    'logbook': 2, 'map': 9, 'debug': 10,
+  };
+
+  void _onMcpNavigate(int deviceId, String name, Object? data) {
+    if (data is! String || !mounted) return;
+    final screen = data.toLowerCase();
+    if (screen == 'settings') {
+      setState(() => _showSettings = true);
+      DataBroker.dispatch(1, 'CurrentScreen', 'settings');
+      return;
+    }
+    final sidebarIdx = _screenToSidebar[screen];
+    if (sidebarIdx != null) {
+      setState(() {
+        _selectedSidebarIndex = sidebarIdx;
+        _directScreenIndex = null;
+        _showSettings = false;
+      });
+      DataBroker.dispatch(1, 'CurrentScreen', screen);
+      return;
+    }
+    final stackIdx = _screenToStack[screen];
+    if (stackIdx != null) {
+      setState(() {
+        _directScreenIndex = stackIdx;
+        _showSettings = false;
+      });
+      DataBroker.dispatch(1, 'CurrentScreen', screen);
+    }
   }
 
   // ── Radio connection ───────────────────────────────────────────────
@@ -369,14 +408,24 @@ class _AppShellState extends State<AppShell> {
   // ── Navigation ─────────────────────────────────────────────────────
 
   void _onDestinationSelected(int sidebarIndex) {
+    // Map sidebar index back to screen name for CurrentScreen
+    const sidebarScreenNames = [
+      'communication', 'contacts', 'packets', 'terminal',
+      'bbs', 'mail', 'torrent', 'aprs',
+    ];
     setState(() {
       _selectedSidebarIndex = sidebarIndex;
+      _directScreenIndex = null;
       _showSettings = false;
     });
+    if (sidebarIndex >= 0 && sidebarIndex < sidebarScreenNames.length) {
+      DataBroker.dispatch(1, 'CurrentScreen', sidebarScreenNames[sidebarIndex]);
+    }
   }
 
   void _onSettingsTap() {
     setState(() => _showSettings = true);
+    DataBroker.dispatch(1, 'CurrentScreen', 'settings');
   }
 
   // ── Build ──────────────────────────────────────────────────────────

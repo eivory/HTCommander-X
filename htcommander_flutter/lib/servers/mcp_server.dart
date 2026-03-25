@@ -42,6 +42,12 @@ class McpServer {
     'McpApiToken', 'McpDebugToolsEnabled', 'TlsEnabled', 'ServerBindAll', 'WinlinkPassword',
   ];
 
+  // Screen names for MCP navigation (matches sidebar + hidden screens)
+  static const List<String> _screenNames = [
+    'communication', 'contacts', 'logbook', 'packets', 'terminal',
+    'bbs', 'mail', 'torrent', 'aprs', 'map', 'debug', 'settings',
+  ];
+
   McpServer() {
     // Ensure API token exists
     _apiToken = _broker.getValue<String>(0, 'McpApiToken', '');
@@ -393,6 +399,16 @@ class McpServer {
         props: {'device_id': deviceIdProp},
         required: ['device_id']));
 
+    // Navigation tools
+    tools.add(_toolDef('navigate_to',
+        'Navigate to a specific screen/tab in the application.',
+        props: {
+          'screen': prop('string', 'Screen name', enumValues: _screenNames),
+        },
+        required: ['screen']));
+    tools.add(_toolDef('get_current_screen',
+        'Get the name of the currently active screen.'));
+
     // Debug tools
     tools.add(_toolDef('get_logs',
         'Get recent application log entries.',
@@ -588,6 +604,10 @@ class McpServer {
           final deviceId = _intArg(args, 'device_id');
           _broker.dispatch(1, 'McpDisconnectRadio', deviceId, store: false);
           return _toolResult('Disconnect requested for device $deviceId');
+        case 'navigate_to':
+          return _callNavigateTo(args);
+        case 'get_current_screen':
+          return _callGetCurrentScreen();
         case 'get_logs':
           return _callGetLogs(args);
         case 'get_setting':
@@ -748,6 +768,20 @@ class McpServer {
       if (d != null) return d;
     }
     return defaultValue;
+  }
+
+  Map<String, dynamic> _callNavigateTo(Map<String, dynamic> args) {
+    final screen = _stringArg(args, 'screen').toLowerCase();
+    if (!_screenNames.contains(screen)) {
+      return _toolError('Unknown screen "$screen". Valid: ${_screenNames.join(", ")}');
+    }
+    _broker.dispatch(1, 'McpNavigateTo', screen, store: false);
+    return _toolResult('Navigated to $screen');
+  }
+
+  Map<String, dynamic> _callGetCurrentScreen() {
+    final screen = _broker.getValue<String>(1, 'CurrentScreen', 'communication');
+    return _toolResult(screen);
   }
 
   Map<String, dynamic> _callGetConnectedRadios() {
