@@ -26,7 +26,7 @@ class LinuxVirtualAudioProvider {
   String get sinkName => 'HTCommander TX';
 
   /// The name of the virtual source (where apps receive radio audio).
-  String get sourceName => 'HTCommander Radio Audio';
+  String get sourceName => 'HTCommander RX';
 
   /// Whether the virtual audio devices are currently active.
   bool get isRunning => _running;
@@ -47,9 +47,11 @@ class LinuxVirtualAudioProvider {
       // Clean up any stale modules from previous runs
       await _cleanupStaleModules();
 
-      // Load RX null sink — receives decoded radio audio
+      // Load RX null sink — internal pipe for decoded radio audio.
+      // The actual user-facing input device is the virtual source below.
+      // This sink appears as an output device but is only used internally by pacat.
       _rxSinkModuleId = await _loadModule('module-null-sink',
-          'sink_name=HTCommander_RX sink_properties=device.description="HTCommander\\sRX"');
+          'sink_name=HTCommander_RX sink_properties=device.description="HTCommander\\sRX\\s(internal)"');
       if (_rxSinkModuleId < 0) {
         await destroy();
         return false;
@@ -63,9 +65,9 @@ class LinuxVirtualAudioProvider {
         return false;
       }
 
-      // Load virtual source — exposes RX audio as a microphone source
+      // Load virtual source — exposes RX audio as a microphone/input device
       _virtualSourceModuleId = await _loadModule('module-virtual-source',
-          'source_name=HTCommander_RX_Source master=HTCommander_RX.monitor source_properties=device.description="HTCommander\\sRadio\\sAudio"');
+          'source_name=HTCommander_RX_Source master=HTCommander_RX.monitor source_properties=device.description="HTCommander\\sRX"');
       if (_virtualSourceModuleId < 0) {
         await destroy();
         return false;
