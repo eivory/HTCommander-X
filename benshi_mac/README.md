@@ -1,231 +1,50 @@
-# bendio
+# Moved: benshi_mac is now eivory/bendio
 
-A macOS Python library for two-way audio with BTech UV-Pro and other
-Benshi-family handheld radios (GA-5WB, VR-N76, VR-N7500, GMRS-Pro).
+The macOS Python library for two-way audio with BTech UV-Pro / Benshi-family
+radios that used to live in this directory has been extracted to its own
+standalone repository:
 
-**Status:** full-duplex audio working. BLE control, RX (radio → Mac speaker)
-and TX (Mac mic → radio) all proven end-to-end against a UV-Pro.
+## → **https://github.com/eivory/bendio** ←
 
-## Hardware / OS requirements
+## Why
 
-- macOS **12.4 or newer.** Earlier 12.x releases have a known `IOBluetooth`
-  RFCOMM bug that breaks the audio path; not an issue for the BLE-only work
-  in Phase 1 but we set the bar here to avoid surprises later.
-- Radio must be **paired at the OS level first:**
-  1. Power the radio on, enable Bluetooth, make it discoverable.
-  2. On the Mac: System Settings → Bluetooth → connect.
-  3. Confirm pairing on the radio (usually a button press).
+It made sense to develop the library alongside this Flutter repo while the
+protocol was being reverse-engineered — the library's `docs/PROTOCOL_NOTES.md`
+cross-references HTCommander-X's `lib/radio/` and `lib/platform/linux/`
+implementations for things like the "BS AOC" audio-service detection and
+the exact SBC codec parameters.
 
-  Without an OS-level bond, BLE indications get dropped silently and you'll
-  see writes succeed but no replies arrive.
-- Python 3.10+.
+Now that the library is stable (full-duplex audio working, tests passing,
+CI in place), it graduated to its own repo so that:
 
-## Install (editable, for development)
+- It can be `pip install bendio`-able
+- Contributors who only care about the Python library don't have to clone
+  this whole Flutter repo
+- HTCommander-X can stay focused on its Dart/Flutter audience
+- Maintenance on each side doesn't require dual-commits
 
-```bash
-cd bendio
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+## History
 
-# One-time macOS fix: create a patched Python.app inside the venv with
-# NSBluetoothAlwaysUsageDescription set. Without this, macOS kills the
-# process with SIGABRT the instant bleak touches CoreBluetooth.
-python scripts/mac_bluetooth_setup.py
+Git history was preserved via `git subtree split --prefix=benshi_mac`. Every
+commit under this directory — from the initial scaffold through the
+live-mic-TX milestone — is in `eivory/bendio` with original authors,
+dates, and messages.
 
-# Audio extras come later; not needed for Phase 1:
-# pip install -e '.[audio]'
-```
+Up to and including commit `b3c9706` ("Rename package benshi → bendio"),
+this directory contained the full library source. The extraction happened
+right after that commit.
 
-### About the Bluetooth permission hack
+## Going forward
 
-macOS requires every process that touches Bluetooth to ship an
-`NSBluetoothAlwaysUsageDescription` key in its bundle `Info.plist`. Neither
-Homebrew Python nor python.org Python declares one, so the first `bleak`
-call aborts with:
+**Bugs and features in the Python library** → file them against
+[eivory/bendio](https://github.com/eivory/bendio/issues).
 
-> This app has crashed because it attempted to access privacy-sensitive
-> data without a usage description.
+**HTCommander-X (this fork)** continues to evolve separately as a Flutter
+app. See the top-level `README.md` (or the upstream
+[`Ylianst/HTCommander`](https://github.com/Ylianst/HTCommander) /
+[`dikei100/HTCommander-X`](https://github.com/dikei100/HTCommander-X)).
 
-`scripts/mac_bluetooth_setup.py` copies the interpreter's `Python.app`
-bundle into `.venv/Python.app`, patches its `Info.plist` (adding the usage
-description and assigning a unique `CFBundleIdentifier`), re-signs it
-ad-hoc, re-links `.venv/bin/python` at the patched copy, and clears any
-stale TCC decision for the new bundle ID. Idempotent and local to the venv.
-
-After that, the first `bendio scan` invocation should produce a macOS
-permission prompt. If no prompt appears and the process still crashes,
-your **terminal / IDE** also needs Bluetooth permission:
-
-> System Settings → Privacy & Security → Bluetooth → toggle on for
-> Terminal / iTerm / VS Code / whatever you're launching from.
-
-## Quickstart — Phase 1
-
-Scan for nearby radios:
-
-```bash
-bendio scan
-```
-
-Connect, fetch device info, dump first 32 channels, and tail notifications:
-
-```bash
-bendio connect AA:BB:CC:DD:EE:FF
-```
-
-Dump the full channel table (tab-separated):
-
-```bash
-bendio channels AA:BB:CC:DD:EE:FF --count 200
-```
-
-Sniff every inbound GAIA frame as timestamped hex (Phase 2 tool for
-observing BLE traffic while the radio is in FM RX):
-
-```bash
-# Register all notification classes so the radio pushes everything it has.
-bendio sniff AA:BB:CC:DD:EE:FF \
-  --register HT_STATUS_CHANGED \
-  --register HT_CH_CHANGED \
-  --register HT_SETTINGS_CHANGED \
-  --register DATA_RXD \
-  --register RADIO_STATUS_CHANGED
-```
-
-## Library usage
-
-```python
-import asyncio
-from bendio import Radio
-from bendio import protocol as p
-
-async def main():
-    async with Radio("AA:BB:CC:DD:EE:FF") as radio:
-        info = await radio.device_info()
-        print(info)
-
-        radio.on_notification(lambda ev: print("event:", ev))
-        await radio.register_notification(p.EventType.HT_STATUS_CHANGED)
-        await asyncio.sleep(60)
-
-asyncio.run(main())
-```
-
-## Project layout
-
-```
-bendio/
-├── bendio/
-│   ├── protocol/       # vendored from benlink (Apache-2.0) — see NOTICE
-│   ├── link.py         # BLE transport via bleak + CoreBluetooth
-│   ├── radio.py        # high-level async API, command/reply matching
-│   ├── cli.py          # scan/connect/channels/sniff/rfcomm-* subcommands
-│   └── audio/          # RFCOMM SPP + SBC + HDLC framing
-├── examples/           # 01_device_info, 02_sniff_fm_rx, 03_listen, 04_ptt
-├── tests/              # offline pytest suite (no hardware needed)
-├── docs/
-│   ├── PROTOCOL_NOTES.md    # empirical findings + spec corrections
-│   └── ble_fm_rx_trace.md   # Phase 2 capture + analysis
-├── scripts/            # mac_bluetooth_setup.py, mic_check.py
-├── .github/workflows/  # CI
-├── pyproject.toml
-├── LICENSE             # Apache-2.0
-├── LICENSE.benlink     # vendored subtree's license (also Apache-2.0)
-├── NOTICE              # required attributions
-├── CHANGELOG.md
-└── README.md
-```
-
-## Known caveats
-
-### IOBluetooth is deprecated
-
-The Classic Bluetooth RFCOMM path this library uses for audio depends on
-Apple's `IOBluetooth` framework. Apple deprecated `IOBluetooth` in favour
-of `CoreBluetooth`, but `CoreBluetooth` is BLE-only and provides no
-replacement for RFCOMM / SPP. There is no supported alternative today.
-
-`IOBluetooth` still works on every shipping macOS release (including
-macOS 15 Sequoia and later), but Apple has signalled it won't receive new
-development. If Apple eventually removes it, the audio path here will
-need to be re-implemented — likely via a `DriverKit`-based RFCOMM shim,
-or by giving up on Classic Bluetooth for these radios and pushing the
-vendor to ship a BLE audio characteristic.
-
-Today: fine. Long-term: a ticking risk on the Classic BT half of the
-library. BLE control (`bendio/link.py`) is unaffected.
-
-## Roadmap
-
-- **Phase 1 (done):** BLE control — device info, channel dump, settings,
-  notifications. Cross-checked against the HTCommander protocol doc.
-- **Phase 2 (done):** Put the radio in FM RX, ran `bendio sniff` and
-  `bendio sniff-all`, committed the trace to `docs/ble_fm_rx_trace.md`.
-  Confirmed audio is not on BLE on any service, including an undocumented
-  vendor service this library is the first to inspect.
-- **Phase 3 (done):** RFCOMM SPP audio via PyObjC + `IOBluetoothRFCOMMChannel`.
-  SBC codec (ffmpeg subprocess — homebrew dropped the standalone `sbc`
-  formula, so `libsbc` via ctypes wasn't feasible), 0x7E framing,
-  sounddevice for I/O. Breakdown:
-    - 3a: open/close RFCOMM cleanly
-    - 3b: dump raw bytes; confirm SBC framing on channel 2 ("BS AOC")
-    - 3c: HDLC deframer + SBC frame splitter
-    - 3d: live RX audio to default output (~200 ms latency)
-    - 3e: TX test tone → live mic TX, full duplex
-- **Phase 4 (partial):** Ergonomic API + examples + packaging.
-  Low-level building blocks (`Radio`, `RfcommTxSession`, `SbcStream`,
-  `SbcEncodeStream`, `Deframer`, `build_audio_packet`) are stable and
-  composable; `examples/` covers device info, sniff, listen, and PTT.
-  TODO: a top-level `BenshiRadio` facade that unifies BLE control +
-  audio behind one async context manager, in the shape of benlink's
-  `RadioController` but extended to expose `.audio.start_rx()` /
-  `.audio.start_tx()` (which benlink never finished).
-
-## Future work
-
-- **Cross-check against HTCommander-X on Linux/Windows.** Run the
-  reference Dart implementation against the same physical radio,
-  compare: does it see the same `GET_DEV_INFO` bytes? Does it dump
-  the same channel table byte-for-byte? Any protocol nuances we
-  handle differently would surface here. Not a blocker for using the
-  library, but a high-value correctness check once a Linux/Windows
-  host with the radio is at hand.
-- **Swift or Dart port** of the Python library, so the `bendio`
-  code becomes reusable from a native Mac app (Swift/SwiftUI) or from
-  HTCommander-X Flutter. The Python version stays as the executable
-  spec and keeps the reverse-engineering loop tight.
-- **Spacebar PTT UX** for the CLI — the plan originally called for
-  `bendio ptt` as hold-to-talk. Currently implemented as
-  `bendio rfcomm-tx-mic --duration N`, which works but is
-  duration-bounded rather than interactive.
-- **IOBluetooth fallback plan.** See the caveat above — Apple has
-  deprecated the framework with no CoreBluetooth equivalent for
-  RFCOMM. Worth scoping a DriverKit-based shim or other alternative
-  before Apple removes the API, not after.
-
-## References
-
-- [benlink](https://github.com/khusmann/benlink) — Python reference whose
-  `protocol/` subtree is vendored into `bendio/protocol/` (Apache-2.0).
-  Our BLE control pattern tracks `BleCommandLink` closely.
-- [HTCommander](https://github.com/Ylianst/HTCommander) — C# reference
-  implementation by Ylian Saint-Hilaire. Source of the HDLC audio framing
-  bytes, SBC codec parameters, and end-of-TX packet format used here.
-- [HTCommander-X](https://github.com/dikei100/HTCommander-X) — Flutter
-  fork of the above (by dikei100) with the Linux/Windows RFCOMM audio
-  implementations we studied for the SDP discovery + channel probing
-  pattern. The "BS AOC" service-name detection that identifies the audio
-  channel on this radio family came from its `linux_audio_transport.dart`.
-
-Empirical protocol findings (including corrections to the above
-references) are collected in [`docs/PROTOCOL_NOTES.md`](docs/PROTOCOL_NOTES.md).
-
-## Licensing
-
-This project is licensed under the **Apache License 2.0**. See the `LICENSE`
-file for the full text and the `NOTICE` file for attributions.
-
-The `bendio/protocol/` subtree is vendored from benlink (also Apache-2.0).
-A copy of the upstream license is retained as `LICENSE.benlink` for
-provenance.
+If HTCommander-X ever gets a native Dart/FFI macOS audio path (it currently
+has Linux/Windows FFI bindings but no macOS), the bendio library's
+`docs/PROTOCOL_NOTES.md` is the reference for what the radio expects on
+the wire.
