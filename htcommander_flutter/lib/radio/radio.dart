@@ -247,7 +247,7 @@ class Radio {
   Timer? _clearChannelTimer;
 
   bool get _packetTrace =>
-      DataBroker.getValue<bool>(0, 'BluetoothFramesDebug', false);
+      DataBroker.getValue<bool>(0, 'BluetoothFramesDebug', true);
   bool get _loopbackMode =>
       DataBroker.getValue<bool>(1, 'LoopbackMode', false);
   bool get _allowTransmit =>
@@ -432,6 +432,8 @@ class Radio {
     switch (cmd) {
       case _BasicCmd.getDevInfo:
         info = RadioDevInfo(value);
+        // ignore: avoid_print
+        print('[DEV-INFO] channelCount=${info!.channelCount}');
         channels = List<RadioChannelInfo?>.filled(info!.channelCount, null);
         _updateState(RadioState.connected);
         _broker.dispatch(deviceId, 'Info', info);
@@ -537,11 +539,15 @@ class Radio {
     final c = RadioChannelInfo.fromBytes(value);
     if (channels != null && c.channelId >= 0 && c.channelId < channels!.length) {
       channels![c.channelId] = c;
+    } else {
+      // ignore: avoid_print
+      print('[CHAN-RX] DROPPED id=${c.channelId} channels.len=${channels?.length}');
     }
     if (_allChannelsLoaded()) {
+      // ignore: avoid_print
+      print('[CHAN-RX] all loaded');
       _broker.dispatch(deviceId, 'Channels', channels);
       _broker.dispatch(deviceId, 'AllChannelsLoaded', true);
-      // Re-request battery now that the radio is fully initialized
       _requestPowerStatus(_PowerStatus.batteryAsPercentage);
     }
   }
@@ -703,9 +709,13 @@ class Radio {
 
   void _updateChannels() {
     if (_state != RadioState.connected || info == null) return;
+    // ignore: avoid_print
+    print('[CHAN-LOAD] info.channelCount=${info!.channelCount}, channels.length=${channels?.length}');
     for (var i = 0; i < info!.channelCount; i++) {
       _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, i);
     }
+    // ignore: avoid_print
+    print('[CHAN-LOAD] sent ${info!.channelCount} reads');
   }
 
   String getChannelNameById(int channelId) {

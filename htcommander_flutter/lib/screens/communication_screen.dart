@@ -6,7 +6,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
+import '../dialogs/channel_picker_dialog.dart';
 import '../dialogs/sstv_send_dialog.dart';
+import '../radio/radio.dart' as ht;
 import '../platform/audio_service.dart';
 import '../platform/bluetooth_service.dart' show PlatformServices;
 import '../radio/models/radio_dev_info.dart';
@@ -349,6 +351,28 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     _broker.dispatch(1, 'SetRecordingEnabled', _isRecording, store: false);
   }
 
+  // ── VFO / Channel picker ───────────────────────────────────────────
+
+  Future<void> _onVfoTap(bool isVfoA) async {
+    if (_channels.isEmpty || _settings == null) return;
+    final picked = await showDialog<int>(
+      context: context,
+      builder: (_) => ChannelPickerDialog(
+        channels: _channels,
+        title: isVfoA ? 'Select VFO A Channel' : 'Select VFO B Channel',
+      ),
+    );
+    if (picked == null) return;
+    final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
+    if (radio == null) return;
+    final s = _settings!;
+    radio.writeSettings(s.toByteArrayWithChannels(
+      isVfoA ? picked : s.channelA,
+      isVfoA ? s.channelB : picked,
+      s.doubleChannel, s.scan, s.squelchLevel,
+    ));
+  }
+
   // ── PTT ────────────────────────────────────────────────────────────
 
   void _onPttStart() {
@@ -465,6 +489,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
               modulation: 'FM',
               isActive: true,
               isPrimary: true,
+              onTap: () => _onVfoTap(true),
             ),
             const SizedBox(height: 8),
 
@@ -475,6 +500,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
               channelName: _vfoBName,
               isActive: false,
               isPrimary: false,
+              onTap: () => _onVfoTap(false),
             ),
             const SizedBox(height: 20),
 

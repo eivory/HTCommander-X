@@ -11,6 +11,7 @@ class VfoDisplay extends StatelessWidget {
     this.modulation,
     this.isActive = false,
     this.isPrimary = true,
+    this.onTap,
   });
 
   final String label;
@@ -19,13 +20,14 @@ class VfoDisplay extends StatelessWidget {
   final String? modulation;
   final bool isActive;
   final bool isPrimary;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final colors = Theme.of(context).colorScheme;
     final accentColor = isPrimary ? colors.primary : colors.tertiary;
 
-    return Container(
+    final card = Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: colors.surfaceContainerHigh,
@@ -111,6 +113,17 @@ class VfoDisplay extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+
+    if (onTap == null) return card;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: card,
       ),
     );
   }

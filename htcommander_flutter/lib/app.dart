@@ -9,6 +9,7 @@ import 'radio/models/radio_settings.dart';
 import 'radio/models/radio_channel_info.dart';
 import 'platform/bluetooth_service.dart';
 import 'platform/linux/linux_platform_services.dart';
+import 'platform/macos/macos_platform_services.dart';
 import 'platform/windows/windows_platform_services.dart';
 import 'theme/signal_protocol_theme.dart';
 import 'widgets/sidebar_nav.dart';
@@ -109,7 +110,7 @@ class _AppShellState extends State<AppShell> {
   void initState() {
     super.initState();
 
-    _radioMac = DataBroker.getValue<String>(0, 'LastRadioMac', '38:D2:00:01:04:E2');
+    _radioMac = DataBroker.getValue<String>(0, 'LastRadioMac', '');
     _callSign = DataBroker.getValue<String>(0, 'CallSign', 'N0CALL');
 
     _initPlatformServices();
@@ -137,6 +138,8 @@ class _AppShellState extends State<AppShell> {
       _platformServices = LinuxPlatformServices();
     } else if (Platform.isWindows) {
       _platformServices = WindowsPlatformServices();
+    } else if (Platform.isMacOS) {
+      _platformServices = MacOsPlatformServices();
     }
     PlatformServices.instance = _platformServices;
   }
@@ -270,6 +273,8 @@ class _AppShellState extends State<AppShell> {
   // ── Radio connection ───────────────────────────────────────────────
 
   void _onPowerTap() {
+    // ignore: avoid_print
+    print('[BT TAP] connected=$_isConnected connecting=$_isConnecting mac="$_radioMac"');
     if (_isConnected || _isConnecting) {
       _disconnectRadio();
     } else if (_radioMac.isNotEmpty) {
