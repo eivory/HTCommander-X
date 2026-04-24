@@ -28,6 +28,18 @@ class MacOsPlatformServices extends PlatformServices {
   }
 
   @override
+  Future<Map<String, dynamic>?> listAudioDevices() async {
+    // Reuses whichever bendio subprocess the active BT transport is
+    // already driving. If no radio is connected, the caller will see
+    // null (and the UI can explain that).
+    final r = _activeRadio;
+    // ignore: avoid_print
+    print('[audio-devices] _activeRadio=${r == null ? "null" : "set"} '
+        'connected=${r?.isConnected}');
+    return r?.listAudioDevices();
+  }
+
+  @override
   RadioAudioTransport createRadioAudioTransport() => _MacOsAudioStub();
 
   @override

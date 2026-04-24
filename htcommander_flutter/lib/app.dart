@@ -273,8 +273,6 @@ class _AppShellState extends State<AppShell> {
   // ── Radio connection ───────────────────────────────────────────────
 
   void _onPowerTap() {
-    // ignore: avoid_print
-    print('[BT TAP] connected=$_isConnected connecting=$_isConnecting mac="$_radioMac"');
     if (_isConnected || _isConnecting) {
       _disconnectRadio();
     } else if (_radioMac.isNotEmpty) {

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import '../bluetooth_service.dart';
+import 'macos_debug.dart';
 
 /// macOS Bluetooth transport that speaks JSON-RPC to a `bendio server`
 /// subprocess over stdio.
@@ -137,8 +138,7 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       final params = msg['params'] as Map<String, dynamic>?;
       final hex = params?['bytes'] as String?;
       if (hex == null) return;
-      // ignore: avoid_print
-      print('[RX] $hex');
+      dprint('[RX] $hex');
       final bytes = _hexDecode(hex);
       onDataReceived?.call(null, bytes);
     } else if (method == 'audio_rx_pcm') {
@@ -154,9 +154,13 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   // ── Audio (RFCOMM channel 2 via bendio) ────────────────────────────
 
   /// Ask bendio to open the audio RFCOMM channel. Returns true on success.
-  Future<bool> audioOpen() async {
+  /// When [outputDevice] is non-null it's forwarded as the sounddevice
+  /// index bendio should use for local RX playback.
+  Future<bool> audioOpen({int? outputDevice}) async {
     if (!_connected || _proc == null) return false;
-    final result = await _call('audio_open', {'address': _address});
+    final params = <String, Object>{'address': _address};
+    if (outputDevice != null) params['output_device'] = outputDevice;
+    final result = await _call('audio_open', params);
     if (result.containsKey('error')) {
       // ignore: avoid_print
       print('[macos-bt] audio_open error: ${result['error']}');
@@ -165,15 +169,54 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
     return true;
   }
 
+  /// Ask bendio for the list of available sounddevice input / output
+  /// devices. Returns the raw dict shape from the server — callers use
+  /// the ``output`` / ``input`` / ``default_*`` fields directly.
+  Future<Map<String, dynamic>?> listAudioDevices() async {
+    if (!_connected || _proc == null) return null;
+    final result = await _call('list_audio_devices', {});
+    // ignore: avoid_print
+    print('[macos-bt] list_audio_devices raw: $result');
+    if (result.containsKey('error')) return null;
+    final r = result['result'];
+    if (r is Map) {
+      return r.map((k, v) => MapEntry(k.toString(), v));
+    }
+    return null;
+  }
+
   Future<void> audioClose() async {
     if (_proc == null) return;
     await _call('audio_close', {});
+  }
+
+  /// Tell bendio to start mic capture via sounddevice and feed the
+  /// encoder → RFCOMM path. [inputDevice] is an optional sounddevice
+  /// index (from list_audio_devices). Returns true on success.
+  Future<bool> audioTxStart({int? inputDevice}) async {
+    if (!_connected || _proc == null) return false;
+    final params = <String, Object>{};
+    if (inputDevice != null) params['input_device'] = inputDevice;
+    final result = await _call('audio_tx_start', params);
+    if (result.containsKey('error')) {
+      // ignore: avoid_print
+      print('[macos-bt] audio_tx_start error: ${result['error']}');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> audioTxStop() async {
+    if (_proc == null) return;
+    await _call('audio_tx_stop', {});
   }
 
   int _txPcmCalls = 0;
   int _txPcmErrors = 0;
 
   /// Send PCM (s16le, 32 kHz, mono) to the radio via SBC encode in bendio.
+  /// (Unused now that mic capture lives in bendio; kept for future
+  /// pre-encoded audio like SSTV that needs to route through the TX path.)
   void audioTxPcm(Uint8List pcm) {
     if (!_connected || _proc == null) return;
     _txPcmCalls++;
@@ -252,8 +295,7 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   void enqueueWrite(int expectedResponse, Uint8List cmdData) {
     if (!_connected || _proc == null) return;
     final hex = _hexEncode(cmdData);
-    // ignore: avoid_print
-    print('[TX] $hex');
+    dprint('[TX] $hex');
     try {
       _proc!.stdin.writeln(jsonEncode({
         'jsonrpc': '2.0',

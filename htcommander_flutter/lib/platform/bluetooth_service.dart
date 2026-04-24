@@ -83,4 +83,11 @@ abstract class PlatformServices {
 
   /// Scans for compatible Bluetooth devices.
   Future<List<CompatibleDevice>> scanForDevices();
+
+  /// Lists available audio input/output devices for UI device pickers.
+  /// Platforms that don't support enumeration return null.
+  ///
+  /// Shape: `{"output": [{index, name}], "input": [...],
+  ///          "default_output": int, "default_input": int}`.
+  Future<Map<String, dynamic>?> listAudioDevices() async => null;
 }

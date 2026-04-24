@@ -253,7 +253,7 @@ class Radio {
   Timer? _clearChannelTimer;
 
   bool get _packetTrace =>
-      DataBroker.getValue<bool>(0, 'BluetoothFramesDebug', true);
+      DataBroker.getValue<bool>(0, 'BluetoothFramesDebug', false);
   bool get _loopbackMode =>
       DataBroker.getValue<bool>(1, 'LoopbackMode', false);
   bool get _allowTransmit =>
@@ -438,8 +438,7 @@ class Radio {
     switch (cmd) {
       case _BasicCmd.getDevInfo:
         info = RadioDevInfo(value);
-        // ignore: avoid_print
-        print('[DEV-INFO] channelCount=${info!.channelCount}');
+        debug('[DEV-INFO] channelCount=${info!.channelCount}');
         channels = List<RadioChannelInfo?>.filled(info!.channelCount, null);
         _updateState(RadioState.connected);
         _broker.dispatch(deviceId, 'Info', info);
@@ -553,8 +552,7 @@ class Radio {
       channels![c.channelId] = c;
     }
     if (_allChannelsLoaded()) {
-      // ignore: avoid_print
-      print('[CHAN-RX] all loaded');
+      debug('[CHAN-RX] all loaded');
       _broker.dispatch(deviceId, 'Channels', channels);
       _broker.dispatch(deviceId, 'AllChannelsLoaded', true);
       _requestPowerStatus(_PowerStatus.batteryAsPercentage);
@@ -742,17 +740,16 @@ class Radio {
 
   void _updateChannels() {
     if (_state != RadioState.connected || info == null) return;
-    // ignore: avoid_print
-    print('[CHAN-LOAD] info.channelCount=${info!.channelCount}, channels.length=${channels?.length}');
+    debug('[CHAN-LOAD] info.channelCount=${info!.channelCount}, '
+        'channels.length=${channels?.length}');
     for (var i = 0; i < info!.channelCount; i++) {
       _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, i);
     }
-    // Also request the two VFO slots so we have their current freq even
-    // if the user hasn't retuned them yet this session.
+    // Also request the two VFO slots so we have their current freq
+    // even if the user hasn't retuned them yet this session.
     _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, 0xFC); // VFO A
     _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, 0xFB); // VFO B
-    // ignore: avoid_print
-    print('[CHAN-LOAD] sent ${info!.channelCount} reads + 2 VFO reads');
+    debug('[CHAN-LOAD] sent ${info!.channelCount} reads + 2 VFO reads');
   }
 
   String getChannelNameById(int channelId) {

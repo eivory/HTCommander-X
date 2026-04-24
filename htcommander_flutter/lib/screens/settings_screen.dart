@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../dialogs/aprs_route_dialog.dart';
+import '../platform/bluetooth_service.dart';
 import '../widgets/glass_card.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -1087,6 +1088,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
         ),
+        if (Platform.isMacOS) ...[
+          const SizedBox(height: 10),
+          _buildMacAudioDevicesCard(colors),
+        ],
         const SizedBox(height: 10),
         GlassCard(
           child: Column(
@@ -1118,6 +1123,181 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ),
       ],
     );
+  }
+
+  // ─── macOS audio devices (Audio tab, macOS only) ──────────────────
+
+  /// Speaker + Microphone dropdowns for the macOS bendio-subprocess
+  /// audio path. Bendio exposes a device list via ``list_audio_devices``
+  /// and accepts ``output_device`` / ``input_device`` (sounddevice
+  /// indices) at audio start. Choices are stored under DataBroker keys
+  /// ``MacOsOutputDevice`` / ``MacOsInputDevice`` so they survive a
+  /// disconnect/reconnect.
+  Widget _buildMacAudioDevicesCard(ColorScheme colors) {
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _sectionLabel('macOS AUDIO DEVICES', colors),
+          const SizedBox(height: 12),
+          FutureBuilder<Map<String, dynamic>?>(
+            future: _fetchMacAudioDevices(),
+            builder: (context, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Row(
+                    children: [
+                      SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 1.5,
+                          color: colors.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Querying bendio…',
+                        style: TextStyle(
+                          fontSize: 11, color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }
+              final data = snap.data;
+              if (data == null) {
+                return Text(
+                  'Connect to a radio first — the device list comes '
+                  'from the bendio subprocess.',
+                  style: TextStyle(
+                    fontSize: 11, color: colors.onSurfaceVariant,
+                  ),
+                );
+              }
+              final outputs =
+                  (data['output'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+              final inputs =
+                  (data['input'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+              final defaultOut = data['default_output'] as int? ?? -1;
+              final defaultIn = data['default_input'] as int? ?? -1;
+              return Column(
+                children: [
+                  _audioDeviceDropdown(
+                    colors,
+                    label: 'SPEAKER',
+                    devices: outputs,
+                    stored: DataBroker.getValue<int>(
+                        0, 'MacOsOutputDevice', -1),
+                    defaultIndex: defaultOut,
+                    prefsKey: 'MacOsOutputDevice',
+                  ),
+                  const SizedBox(height: 8),
+                  _audioDeviceDropdown(
+                    colors,
+                    label: 'MICROPHONE',
+                    devices: inputs,
+                    stored: DataBroker.getValue<int>(
+                        0, 'MacOsInputDevice', -1),
+                    defaultIndex: defaultIn,
+                    prefsKey: 'MacOsInputDevice',
+                  ),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'Speaker applies on next audio start (reconnect). '
+            'Microphone applies on next PTT press.',
+            style: TextStyle(
+              fontSize: 10,
+              color: colors.outline,
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _audioDeviceDropdown(
+    ColorScheme colors, {
+    required String label,
+    required List<Map<String, dynamic>> devices,
+    required int stored,
+    required int defaultIndex,
+    required String prefsKey,
+  }) {
+    final items = <DropdownMenuItem<int>>[
+      const DropdownMenuItem<int>(
+        value: -1,
+        child: Text('System default', style: TextStyle(fontSize: 11)),
+      ),
+      ...devices.map((d) {
+        final idx = d['index'] as int;
+        final name = d['name'] as String;
+        final displayLabel = idx == defaultIndex ? '$name  (default)' : name;
+        return DropdownMenuItem<int>(
+          value: idx,
+          child: Text(displayLabel, style: const TextStyle(fontSize: 11)),
+        );
+      }),
+    ];
+    final value = items.any((i) => i.value == stored) ? stored : -1;
+    return Row(
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 1,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: Container(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            decoration: BoxDecoration(
+              color: colors.surfaceContainerLow,
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: colors.outlineVariant),
+            ),
+            child: DropdownButton<int>(
+              value: value,
+              underline: const SizedBox(),
+              isDense: true,
+              isExpanded: true,
+              dropdownColor: colors.surfaceContainerHigh,
+              items: items,
+              onChanged: (v) {
+                if (v == null) return;
+                setState(() {});
+                DataBroker.dispatch(0, prefsKey, v);
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<Map<String, dynamic>?> _fetchMacAudioDevices() async {
+    final svc = PlatformServices.instance;
+    // ignore: avoid_print
+    print('[audio-devices] PlatformServices.instance=${svc?.runtimeType}');
+    if (svc == null) return null;
+    final r = await svc.listAudioDevices();
+    // ignore: avoid_print
+    print('[audio-devices] listAudioDevices returned: '
+        '${r == null ? "null" : "${(r["output"] as List?)?.length ?? 0} outputs"}');
+    return r;
   }
 
   // ─── Modem ────────────────────────────────────────────────────────

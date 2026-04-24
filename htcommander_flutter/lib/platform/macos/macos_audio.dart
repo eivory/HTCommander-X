@@ -3,8 +3,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import '../../core/data_broker.dart';
 import '../audio_service.dart';
 import 'macos_bluetooth.dart';
+import 'macos_debug.dart';
 
 /// macOS audio output. Receives decoded PCM from bendio's RFCOMM audio
 /// channel and pipes it into an `ffplay` subprocess for playback on the
@@ -29,7 +31,12 @@ class MacOsAudioOutput implements AudioOutput {
 
     // ignore: avoid_print
     print('[MacOsAudioOutput] calling audio_open');
-    final ok = await bt.audioOpen();
+    // Pass the user's chosen output device (sounddevice index) if any.
+    // -1 / unset means "let bendio pick the system default".
+    final storedDevice =
+        DataBroker.getValue<int>(0, 'MacOsOutputDevice', -1);
+    final outputDevice = storedDevice >= 0 ? storedDevice : null;
+    final ok = await bt.audioOpen(outputDevice: outputDevice);
     // ignore: avoid_print
     print('[MacOsAudioOutput] audio_open returned $ok');
     if (!ok) {
@@ -66,10 +73,7 @@ class MacOsAudioOutput implements AudioOutput {
     _ffplay!.stderr
         .transform(utf8.decoder)
         .transform(const LineSplitter())
-        .listen((line) {
-      // ignore: avoid_print
-      print('[ffplay] $line');
-    });
+        .listen((line) => dprint('[ffplay] $line'));
 
     unawaited(_ffplay!.exitCode.then((code) {
       // ignore: avoid_print
@@ -91,8 +95,7 @@ class MacOsAudioOutput implements AudioOutput {
       rxFrames++;
       rxBytes += pcm.length;
       if (rxFrames == 1 || rxFrames % 50 == 0) {
-        // ignore: avoid_print
-        print('[MacOsAudioOutput] RX frames=$rxFrames bytes=$rxBytes');
+        dprint('[MacOsAudioOutput] RX frames=$rxFrames bytes=$rxBytes');
       }
       if (_pipe != null && !_pipe!.isClosed) {
         _pipe!.add(pcm);
@@ -123,18 +126,14 @@ class MacOsAudioOutput implements AudioOutput {
   }
 }
 
-/// macOS mic capture. Spawns `ffmpeg -f avfoundation` to read from the
-/// default audio input, producing s16le 32 kHz mono PCM. PCM is fed to
-/// bendio via JSON-RPC `audio_tx_pcm`, which encodes to SBC and emits it
-/// on RFCOMM channel 2.
+/// macOS mic capture. Mic reading lives in bendio (via sounddevice)
+/// for two reasons: avoids an avfoundation↔sounddevice index-space
+/// mismatch with the speaker picker, and keeps the raw PCM off the
+/// JSON-RPC wire. We just tell bendio when to start/stop and pass the
+/// user-selected sounddevice input index (from DataBroker).
 class MacOsMicCapture implements MicCapture {
   final MacOsRadioBluetooth? _bt;
-  Process? _ffmpeg;
-  StreamSubscription<List<int>>? _stdoutSub;
-  final _buffer = BytesBuilder();
   bool _started = false;
-
-  static const int _chunkBytes = 256; // 128 samples mono s16 = one SBC frame
 
   MacOsMicCapture(this._bt);
 
@@ -144,10 +143,7 @@ class MacOsMicCapture implements MicCapture {
     if (_started || bt == null) return;
     _started = true;
 
-    // Ensure the RFCOMM audio channel is open. It's idempotent in the
-    // right direction (bendio closes the previous session first), but
-    // if MacOsAudioOutput hasn't opened it yet we need to now — otherwise
-    // audio_tx_pcm calls will fail with "audio not open".
+    // Ensure the RFCOMM audio channel is open.
     final ok = await bt.audioOpen();
     if (!ok) {
       // ignore: avoid_print
@@ -156,67 +152,22 @@ class MacOsMicCapture implements MicCapture {
       return;
     }
 
-    // ignore: avoid_print
-    print('[MacOsMicCapture] spawning ffmpeg avfoundation');
-    _ffmpeg = await Process.start('ffmpeg', [
-      '-loglevel', 'error',
-      '-nostdin',
-      '-f', 'avfoundation',
-      '-i', ':0',
-      '-ar', '32000',
-      '-ac', '1',
-      '-f', 's16le',
-      '-',
-    ]);
-
-    _ffmpeg!.stderr
-        .transform(utf8.decoder)
-        .transform(const LineSplitter())
-        .listen((line) {
+    final stored = DataBroker.getValue<int>(0, 'MacOsInputDevice', -1);
+    final inputDevice = stored >= 0 ? stored : null;
+    final txOk = await bt.audioTxStart(inputDevice: inputDevice);
+    if (!txOk) {
       // ignore: avoid_print
-      print('[ffmpeg-mic] $line');
-    });
-
-    int totalSent = 0;
-    _stdoutSub = _ffmpeg!.stdout.listen(
-      (chunk) {
-        _buffer.add(chunk);
-        while (_buffer.length >= _chunkBytes) {
-          final all = _buffer.takeBytes();
-          final n = (all.length ~/ _chunkBytes) * _chunkBytes;
-          bt.audioTxPcm(Uint8List.fromList(all.sublist(0, n)));
-          totalSent += n;
-          if (n < all.length) {
-            _buffer.add(all.sublist(n));
-          }
-        }
-      },
-      onDone: () {
-        // ignore: avoid_print
-        print('[MacOsMicCapture] ffmpeg stdout closed (sent=$totalSent bytes)');
-      },
-      onError: (Object err) {
-        // ignore: avoid_print
-        print('[MacOsMicCapture] ffmpeg stdout error: $err');
-      },
-      cancelOnError: false,
-    );
-
-    unawaited(_ffmpeg!.exitCode.then((code) {
-      // ignore: avoid_print
-      print('[MacOsMicCapture] ffmpeg exited code=$code (sent=$totalSent bytes)');
-    }));
+      print('[MacOsMicCapture] audio_tx_start failed');
+      _started = false;
+    }
   }
 
   @override
   void stop() {
     _started = false;
-    _stdoutSub?.cancel();
-    _stdoutSub = null;
-    try {
-      _ffmpeg?.kill();
-    } catch (_) {}
-    _ffmpeg = null;
-    _buffer.clear();
+    final bt = _bt;
+    if (bt != null) {
+      unawaited(bt.audioTxStop());
+    }
   }
 }
