@@ -1,6 +1,17 @@
 import 'package:flutter/material.dart';
 import '../radio/models/radio_channel_info.dart';
 
+/// Result returned when the user picks a channel in [ChannelPickerDialog].
+///
+/// One of the two fields is non-null depending on which action the user
+/// took — a short tap picks, a long press asks to edit.
+class ChannelPickerResult {
+  final int? pickIndex;
+  final int? editIndex;
+  const ChannelPickerResult.pick(int this.pickIndex) : editIndex = null;
+  const ChannelPickerResult.edit(int this.editIndex) : pickIndex = null;
+}
+
 /// Dialog for selecting a channel from the radio's channel list.
 class ChannelPickerDialog extends StatelessWidget {
   /// The list of channels (null entries are empty slots).
@@ -54,7 +65,10 @@ class ChannelPickerDialog extends StatelessWidget {
                         : '';
 
                     return InkWell(
-                      onTap: () => Navigator.pop(context, index),
+                      onTap: () => Navigator.pop(
+                          context, ChannelPickerResult.pick(index)),
+                      onLongPress: () => Navigator.pop(
+                          context, ChannelPickerResult.edit(index)),
                       borderRadius: BorderRadius.circular(4),
                       child: Container(
                         padding: const EdgeInsets.symmetric(
@@ -112,7 +126,16 @@ class ChannelPickerDialog extends StatelessWidget {
                   },
                 ),
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              Text(
+                'Tap to select · Long-press to edit',
+                style: TextStyle(
+                  fontSize: 9,
+                  color: colors.outline,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 4),
               Align(
                 alignment: Alignment.centerRight,
                 child: TextButton(

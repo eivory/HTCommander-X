@@ -217,6 +217,12 @@ class Radio {
   RadioSettings? settings;
   RadioBssSettings? bssSettings;
   RadioPosition? position;
+  // When a VFO is in ad-hoc freq mode the radio reports the current freq
+  // as a HT_CH_CHANGED event with a sentinel channel id (0xFC = VFO A,
+  // 0xFB = VFO B). We stash the resulting channel info here so the UI
+  // can render the VFO freq without the channel-slot list.
+  RadioChannelInfo? vfoAInfo;
+  RadioChannelInfo? vfoBInfo;
   bool hardwareModemEnabled = true;
 
   RadioState _state = RadioState.disconnected;
@@ -537,11 +543,14 @@ class Radio {
 
   void _handleReadRfChannel(Uint8List value) {
     final c = RadioChannelInfo.fromBytes(value);
-    if (channels != null && c.channelId >= 0 && c.channelId < channels!.length) {
+    if (c.channelId == 0xFC) {
+      vfoAInfo = c;
+      _broker.dispatch(deviceId, 'VfoAInfo', c);
+    } else if (c.channelId == 0xFB) {
+      vfoBInfo = c;
+      _broker.dispatch(deviceId, 'VfoBInfo', c);
+    } else if (channels != null && c.channelId >= 0 && c.channelId < channels!.length) {
       channels![c.channelId] = c;
-    } else {
-      // ignore: avoid_print
-      print('[CHAN-RX] DROPPED id=${c.channelId} channels.len=${channels?.length}');
     }
     if (_allChannelsLoaded()) {
       // ignore: avoid_print
@@ -566,6 +575,9 @@ class Radio {
         settings = RadioSettings.fromBytes(value);
         _broker.dispatch(deviceId, 'Settings', settings);
         break;
+      case _Notification.htChChanged:
+        _handleHtChChanged(value);
+        break;
       case _Notification.positionChange:
         value[4] = 0; // Set status to success
         position = RadioPosition.fromBytes(value);
@@ -577,6 +589,27 @@ class Radio {
         break;
       default:
         debug('Event: ${BinaryUtils.bytesToHex(value)}');
+    }
+  }
+
+  /// HT_CH_CHANGED event: the radio re-broadcasts the channel info for
+  /// whatever channel just became active — either a regular channel slot
+  /// (updates the channels list) or a VFO sentinel (updates vfoAInfo /
+  /// vfoBInfo). Emitted on region changes, power-level cycles, and on
+  /// VFO retunes.
+  void _handleHtChChanged(Uint8List value) {
+    final c = RadioChannelInfo.fromBytes(value);
+    if (c.channelId == 0xFC) {
+      vfoAInfo = c;
+      _broker.dispatch(deviceId, 'VfoAInfo', c);
+    } else if (c.channelId == 0xFB) {
+      vfoBInfo = c;
+      _broker.dispatch(deviceId, 'VfoBInfo', c);
+    } else if (channels != null &&
+        c.channelId >= 0 &&
+        c.channelId < channels!.length) {
+      channels![c.channelId] = c;
+      _broker.dispatch(deviceId, 'Channels', channels);
     }
   }
 
@@ -714,8 +747,12 @@ class Radio {
     for (var i = 0; i < info!.channelCount; i++) {
       _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, i);
     }
+    // Also request the two VFO slots so we have their current freq even
+    // if the user hasn't retuned them yet this session.
+    _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, 0xFC); // VFO A
+    _sendCommandByte(_CommandGroup.basic, _BasicCmd.readRfCh, 0xFB); // VFO B
     // ignore: avoid_print
-    print('[CHAN-LOAD] sent ${info!.channelCount} reads');
+    print('[CHAN-LOAD] sent ${info!.channelCount} reads + 2 VFO reads');
   }
 
   String getChannelNameById(int channelId) {

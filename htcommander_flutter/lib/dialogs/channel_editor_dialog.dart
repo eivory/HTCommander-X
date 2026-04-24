@@ -24,6 +24,7 @@ class _ChannelEditorDialogState extends State<ChannelEditorDialog> {
   int _txPower = 0; // 0=High, 1=Medium, 2=Low
   bool _scan = false;
   bool _txDisable = false;
+  bool _mute = false;
 
   @override
   void initState() {
@@ -45,6 +46,7 @@ class _ChannelEditorDialogState extends State<ChannelEditorDialog> {
       _bandwidth = ch.bandwidth;
       _scan = ch.scan;
       _txDisable = ch.txDisable;
+      _mute = ch.mute;
       if (ch.txAtMaxPower) {
         _txPower = 0;
       } else if (ch.txAtMedPower) {
@@ -88,6 +90,7 @@ class _ChannelEditorDialogState extends State<ChannelEditorDialog> {
     result.bandwidth = _bandwidth;
     result.scan = _scan;
     result.txDisable = _txDisable;
+    result.mute = _mute;
     result.txAtMaxPower = _txPower == 0;
     result.txAtMedPower = _txPower == 1;
 
@@ -188,6 +191,10 @@ class _ChannelEditorDialogState extends State<ChannelEditorDialog> {
               const SizedBox(height: 8),
               _buildCheckbox('TX DISABLE', _txDisable, (v) {
                 setState(() => _txDisable = v);
+              }, colors),
+              const SizedBox(height: 8),
+              _buildCheckbox('MUTE', _mute, (v) {
+                setState(() => _mute = v);
               }, colors),
               const SizedBox(height: 20),
               Row(

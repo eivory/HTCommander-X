@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import '../audio_service.dart';
 import '../bluetooth_service.dart';
+import 'macos_audio.dart';
 import 'macos_bluetooth.dart';
 
 /// macOS platform services. Phase A: BLE control only (no audio).
@@ -13,19 +14,27 @@ import 'macos_bluetooth.dart';
 /// channel for SBC-encoded PCM, likely over a side stream since stdin/stdout
 /// is reserved for JSON-RPC.
 class MacOsPlatformServices extends PlatformServices {
+  /// The most recently created BLE transport. Audio factories reach for
+  /// it so they can share the same bendio subprocess (there's only one,
+  /// and it owns both the BLE control channel and the RFCOMM audio
+  /// channel). Nulled out when a new radio is connected.
+  MacOsRadioBluetooth? _activeRadio;
+
   @override
   RadioBluetoothTransport createRadioBluetooth(String macAddress) {
-    return MacOsRadioBluetooth(macAddress);
+    final t = MacOsRadioBluetooth(macAddress);
+    _activeRadio = t;
+    return t;
   }
 
   @override
   RadioAudioTransport createRadioAudioTransport() => _MacOsAudioStub();
 
   @override
-  AudioOutput createAudioOutput() => _MacOsAudioOutputStub();
+  AudioOutput createAudioOutput() => MacOsAudioOutput(_activeRadio);
 
   @override
-  MicCapture createMicCapture() => _MacOsMicCaptureStub();
+  MicCapture createMicCapture() => MacOsMicCapture(_activeRadio);
 
   /// Scans for compatible BLE radios via the bendio JSON-RPC server.
   ///
@@ -92,14 +101,15 @@ class MacOsPlatformServices extends PlatformServices {
   }
 }
 
-// ─── Phase B stubs (audio) ─────────────────────────────────────────────
-
+// On macOS we don't expose a RadioAudioTransport: bendio handles the
+// RFCOMM audio channel internally and decodes/encodes SBC itself, so
+// the Radio class's Dart-side RadioAudioManager is bypassed. PCM flows
+// directly between MacOsRadioBluetooth and MacOsAudioOutput/MicCapture.
 class _MacOsAudioStub implements RadioAudioTransport {
   @override
   bool get isConnected => false;
   @override
-  Future<void> connect(String macAddress) async =>
-      throw UnimplementedError('macOS audio is Phase B — not yet implemented');
+  Future<void> connect(String macAddress) async {}
   @override
   void disconnect() {}
   @override
@@ -108,20 +118,4 @@ class _MacOsAudioStub implements RadioAudioTransport {
   Future<void> write(Uint8List data) async {}
   @override
   void dispose() {}
-}
-
-class _MacOsAudioOutputStub implements AudioOutput {
-  @override
-  Future<void> start(int radioDeviceId) async {}
-  @override
-  void writePcmMono(Uint8List monoSamples) {}
-  @override
-  void stop() {}
-}
-
-class _MacOsMicCaptureStub implements MicCapture {
-  @override
-  Future<void> start(int radioDeviceId) async {}
-  @override
-  void stop() {}
 }

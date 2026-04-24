@@ -12,6 +12,8 @@ class VfoDisplay extends StatelessWidget {
     this.isActive = false,
     this.isPrimary = true,
     this.onTap,
+    this.onLongPress,
+    this.onActivate,
   });
 
   final String label;
@@ -21,6 +23,8 @@ class VfoDisplay extends StatelessWidget {
   final bool isActive;
   final bool isPrimary;
   final VoidCallback? onTap;
+  final VoidCallback? onLongPress;
+  final VoidCallback? onActivate;
 
   @override
   Widget build(BuildContext context) {
@@ -55,6 +59,25 @@ class VfoDisplay extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                     color: accentColor,
                     letterSpacing: 1,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              // Active-VFO dot. Filled = this VFO is the active TX/RX
+              // target. Tap (when inactive) to make this one active.
+              GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: isActive ? null : onActivate,
+                child: Tooltip(
+                  message: isActive ? 'Active' : 'Tap to activate',
+                  child: Container(
+                    width: 10,
+                    height: 10,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: isActive ? accentColor : Colors.transparent,
+                      border: Border.all(color: accentColor, width: 1.2),
+                    ),
                   ),
                 ),
               ),
@@ -116,12 +139,13 @@ class VfoDisplay extends StatelessWidget {
       ),
     );
 
-    if (onTap == null) return card;
+    if (onTap == null && onLongPress == null) return card;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: onTap,
+        onLongPress: onLongPress,
         borderRadius: BorderRadius.circular(8),
         child: card,
       ),

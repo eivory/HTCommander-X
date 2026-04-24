@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../handlers/aprs_handler.dart';
+import '../radio/models/radio_channel_info.dart';
+import '../radio/models/radio_ht_status.dart';
+import '../radio/radio_enums.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/status_strip.dart';
 
@@ -15,7 +18,10 @@ class AprsScreen extends StatefulWidget {
 class _AprsScreenState extends State<AprsScreen> {
   final DataBrokerClient _broker = DataBrokerClient();
   bool _showAll = false;
-  bool _showWarning = true;
+  bool _warningDismissed = false;
+  bool _isTransmitting = false;
+  bool _isConnected = false;
+  int _rssi = 0; // 0–15 S-meter scale from HtStatus
   String _selectedRoute = 'WIDE1-1,WIDE2-1';
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
@@ -33,6 +39,19 @@ class _AprsScreenState extends State<AprsScreen> {
   void initState() {
     super.initState();
     _broker.subscribe(1, 'AprsStoreUpdated', _onAprsStoreUpdated);
+    _broker.subscribe(100, 'Channels', (_, __, ___) => setState(() {}));
+    _broker.subscribe(0, 'AprsChannelId', (_, __, ___) => setState(() {}));
+    _broker.subscribe(100, 'HtStatus', _onHtStatus);
+    _broker.subscribe(100, 'State', _onState);
+    // Seed current TX state and radio connection in case they were
+    // published before we subscribed.
+    final status = DataBroker.getValueDynamic(100, 'HtStatus');
+    if (status is RadioHtStatus) {
+      _isTransmitting = status.isInTx;
+      _rssi = status.rssi;
+    }
+    final state = DataBroker.getValue<String>(100, 'State', '');
+    _isConnected = state.toLowerCase() == 'connected';
     // Load initial data
     _loadEntries();
   }
@@ -49,6 +68,81 @@ class _AprsScreenState extends State<AprsScreen> {
 
   void _onAprsStoreUpdated(int deviceId, String name, Object? data) {
     _loadEntries();
+  }
+
+  void _onState(int deviceId, String name, Object? data) {
+    if (!mounted || data is! String) return;
+    final connected = data.toLowerCase() == 'connected';
+    if (_isConnected == connected) return;
+    setState(() => _isConnected = connected);
+  }
+
+  void _onHtStatus(int deviceId, String name, Object? data) {
+    if (!mounted || data is! RadioHtStatus) return;
+    if (_isTransmitting == data.isInTx && _rssi == data.rssi) return;
+    setState(() {
+      _isTransmitting = data.isInTx;
+      _rssi = data.rssi;
+    });
+  }
+
+  /// Returns the RX frequency of the detected APRS channel formatted
+  /// as MHz with 3 decimals, or a dashed placeholder if no channel is set.
+  String _aprsFreqMhz() {
+    final ch = _aprsChannel();
+    if (ch == null || ch.rxFreq <= 0) return '---.---';
+    return (ch.rxFreq / 1000000.0).toStringAsFixed(3);
+  }
+
+  /// Returns a short label like "Wide-FM / APRS" or the channel name,
+  /// falling back to a "not configured" message.
+  String _aprsChannelLabel() {
+    final ch = _aprsChannel();
+    if (ch == null) return 'No APRS channel';
+    final name = ch.nameStr.trim();
+    return name.isNotEmpty ? '$name / APRS' : 'APRS';
+  }
+
+  String _aprsModeLabel() {
+    final ch = _aprsChannel();
+    if (ch == null) return '—';
+    return ch.rxMod == RadioModulationType.am ? 'AM' : 'FM';
+  }
+
+  String _aprsBandwidthLabel() {
+    final ch = _aprsChannel();
+    if (ch == null) return '—';
+    return ch.bandwidth == RadioBandwidthType.wide ? '25 kHz' : '12.5 kHz';
+  }
+
+  RadioChannelInfo? _aprsChannel() {
+    final id = _aprsChannelId();
+    if (id < 0) return null;
+    final channels = DataBroker.getValueDynamic(100, 'Channels');
+    if (channels is! List || id >= channels.length) return null;
+    final ch = channels[id];
+    return ch is RadioChannelInfo ? ch : null;
+  }
+
+  /// Returns the radio channel id that will be used for APRS on the
+  /// currently connected radio, or -1 if none is configured / detected.
+  /// Mirrors AprsHandler._getAprsChannelId so the UI and handler agree.
+  int _aprsChannelId() {
+    final channels = DataBroker.getValueDynamic(100, 'Channels');
+    if (channels is! List) return -1;
+    final override = DataBroker.getValue<int>(0, 'AprsChannelId', -1);
+    if (override >= 0 &&
+        override < channels.length &&
+        channels[override] is RadioChannelInfo) {
+      return override;
+    }
+    for (var i = 0; i < channels.length; i++) {
+      final ch = channels[i];
+      if (ch is RadioChannelInfo && ch.nameStr.toUpperCase() == 'APRS') {
+        return i;
+      }
+    }
+    return -1;
   }
 
   @override
@@ -122,7 +216,7 @@ class _AprsScreenState extends State<AprsScreen> {
 
     return Column(
       children: [
-        if (_showWarning) _buildWarningBanner(colors),
+        if (!_warningDismissed && _aprsChannelId() < 0) _buildWarningBanner(colors),
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(10),
@@ -158,7 +252,7 @@ class _AprsScreenState extends State<AprsScreen> {
           ),
         ),
         StatusStrip(
-          isConnected: _entries.isNotEmpty,
+          isConnected: _isConnected,
           encoding: 'AX.25 / APRS',
           extraItems: [
             StatusStripItem(text: '$_activeStations STATIONS'),
@@ -186,9 +280,10 @@ class _AprsScreenState extends State<AprsScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              // Large frequency display
+              // Large frequency display — from the detected APRS channel,
+              // or a placeholder if none is configured.
               Text(
-                '144.800',
+                _aprsFreqMhz(),
                 style: TextStyle(
                   fontSize: 36,
                   fontWeight: FontWeight.w300,
@@ -213,7 +308,7 @@ class _AprsScreenState extends State<AprsScreen> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 5),
                 child: Text(
-                  'Wide-FM / APRS Standard',
+                  _aprsChannelLabel(),
                   style: TextStyle(
                     fontSize: 11,
                     color: colors.onSurfaceVariant,
@@ -221,49 +316,53 @@ class _AprsScreenState extends State<AprsScreen> {
                 ),
               ),
               const Spacer(),
-              // PTT Active indicator
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: colors.error.withAlpha(30),
-                  borderRadius: BorderRadius.circular(4),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 6,
-                      height: 6,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: colors.error,
+              // PTT Active indicator — only when the radio is actually
+              // transmitting (from HtStatus.isInTx).
+              if (_isTransmitting)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: colors.error.withAlpha(30),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: colors.error,
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      'PTT ACTIVE',
-                      style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 1,
-                        color: colors.error,
+                      const SizedBox(width: 6),
+                      Text(
+                        'PTT ACTIVE',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 1,
+                          color: colors.error,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
           const SizedBox(height: 14),
-          // Signal metrics row
+          // Signal metrics row. The UV-PRO exposes a 4-bit RSSI
+          // (S-meter 0–15) over GAIA — not a dBm value — and does not
+          // expose SNR at all, so we show what we actually have.
           Row(
             children: [
-              _buildMetric(colors, 'SIGNAL', '-92 dBm'),
+              _buildMetric(colors, 'SIGNAL', 'S$_rssi/15'),
               const SizedBox(width: 24),
-              _buildMetric(colors, 'SNR', '12.4 dB'),
+              _buildMetric(colors, 'MODE', _aprsModeLabel()),
               const SizedBox(width: 24),
-              _buildMetric(colors, 'BANDWIDTH', '12.5 kHz'),
+              _buildMetric(colors, 'BANDWIDTH', _aprsBandwidthLabel()),
             ],
           ),
         ],
@@ -588,7 +687,7 @@ class _AprsScreenState extends State<AprsScreen> {
             icon: const Icon(Icons.close, size: 14),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            onPressed: () => setState(() => _showWarning = false),
+            onPressed: () => setState(() => _warningDismissed = true),
           ),
         ],
       ),

@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
+import '../dialogs/channel_editor_dialog.dart';
 import '../dialogs/channel_picker_dialog.dart';
 import '../dialogs/sstv_send_dialog.dart';
 import '../radio/radio.dart' as ht;
@@ -66,6 +67,8 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   // Cached radio data for deriving VFO info
   RadioSettings? _settings;
   List<RadioChannelInfo?> _channels = [];
+  RadioChannelInfo? _vfoAInfo;
+  RadioChannelInfo? _vfoBInfo;
 
   // Audio I/O
   MicCapture? _micCapture;
@@ -84,6 +87,8 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     _broker.subscribe(100, 'HtStatus', _onHtStatus);
     _broker.subscribe(100, 'Settings', _onSettings);
     _broker.subscribe(100, 'Channels', _onChannels);
+    _broker.subscribe(100, 'VfoAInfo', _onVfoAInfo);
+    _broker.subscribe(100, 'VfoBInfo', _onVfoBInfo);
     _broker.subscribe(100, 'BatteryAsPercentage', _onBattery);
     _broker.subscribe(100, 'Position', _onPosition);
     _broker.subscribe(100, 'AudioState', _onAudioState);
@@ -118,6 +123,11 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
 
     final channels = _broker.getValueDynamic(100, 'Channels');
     if (channels is List) _channels = channels.cast<RadioChannelInfo?>();
+
+    final vfoA = _broker.getValueDynamic(100, 'VfoAInfo');
+    if (vfoA is RadioChannelInfo) _vfoAInfo = vfoA;
+    final vfoB = _broker.getValueDynamic(100, 'VfoBInfo');
+    if (vfoB is RadioChannelInfo) _vfoBInfo = vfoB;
 
     _batteryPercent = _broker.getValue<int>(100, 'BatteryAsPercentage', 0);
 
@@ -199,6 +209,22 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     });
   }
 
+  void _onVfoAInfo(int deviceId, String name, Object? data) {
+    if (!mounted || data is! RadioChannelInfo) return;
+    setState(() {
+      _vfoAInfo = data;
+      _updateVfoFromChannels();
+    });
+  }
+
+  void _onVfoBInfo(int deviceId, String name, Object? data) {
+    if (!mounted || data is! RadioChannelInfo) return;
+    setState(() {
+      _vfoBInfo = data;
+      _updateVfoFromChannels();
+    });
+  }
+
   void _onBattery(int deviceId, String name, Object? data) {
     if (!mounted || data is! int) return;
     setState(() => _batteryPercent = data);
@@ -219,6 +245,10 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       final ch = _channels[chA]!;
       _vfoAFreq = ch.rxFreq / 1000000.0;
       _vfoAName = ch.nameStr;
+    } else if (_isVfoSentinel(chA) && _vfoAInfo != null) {
+      // VFO mode — use the channel info the radio sent for this VFO.
+      _vfoAFreq = _vfoAInfo!.rxFreq / 1000000.0;
+      _vfoAName = 'VFO';
     } else {
       _vfoAFreq = 0;
       _vfoAName = '';
@@ -228,11 +258,18 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       final ch = _channels[chB]!;
       _vfoBFreq = ch.rxFreq / 1000000.0;
       _vfoBName = ch.nameStr;
+    } else if (_isVfoSentinel(chB) && _vfoBInfo != null) {
+      _vfoBFreq = _vfoBInfo!.rxFreq / 1000000.0;
+      _vfoBName = 'VFO';
     } else {
       _vfoBFreq = 0;
       _vfoBName = '';
     }
   }
+
+  /// Benshi radios report a high sentinel (0xFB = VFO B, 0xFC = VFO A)
+  /// in settings.channelA/B when that VFO is in ad-hoc frequency mode.
+  bool _isVfoSentinel(int ch) => ch >= 0xF0;
 
   // ── SSTV decode callbacks ─────────────────────────────────────────
 
@@ -355,22 +392,87 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
 
   Future<void> _onVfoTap(bool isVfoA) async {
     if (_channels.isEmpty || _settings == null) return;
-    final picked = await showDialog<int>(
+    final result = await showDialog<ChannelPickerResult>(
       context: context,
       builder: (_) => ChannelPickerDialog(
         channels: _channels,
         title: isVfoA ? 'Select VFO A Channel' : 'Select VFO B Channel',
       ),
     );
-    if (picked == null) return;
+    if (result == null) return;
+    final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
+    if (radio == null) return;
+    if (result.pickIndex != null) {
+      final s = _settings!;
+      final picked = result.pickIndex!;
+      radio.writeSettings(s.toByteArrayWithChannels(
+        isVfoA ? picked : s.channelA,
+        isVfoA ? s.channelB : picked,
+        s.doubleChannel, s.scan, s.squelchLevel,
+      ));
+    } else if (result.editIndex != null) {
+      await _editChannelSlot(result.editIndex!);
+    }
+  }
+
+  /// Open the channel editor for a channel slot and, on save, write it
+  /// back to the radio.
+  Future<void> _editChannelSlot(int channelIndex) async {
+    if (channelIndex < 0 || channelIndex >= _channels.length) return;
+    final current = _channels[channelIndex];
+    if (current == null) return;
+    final edited = await showDialog<RadioChannelInfo>(
+      context: context,
+      builder: (_) => ChannelEditorDialog(channel: current),
+    );
+    if (edited == null) return;
+    edited.channelId = current.channelId;
+    final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
+    radio?.setChannel(edited);
+  }
+
+  /// Make [isVfoA] the active TX/RX VFO. Writes settings with
+  /// doubleChannel = 1 (VFO A) or 2 (VFO B).
+  void _onVfoActivate(bool isVfoA) {
+    if (_settings == null) return;
     final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
     if (radio == null) return;
     final s = _settings!;
     radio.writeSettings(s.toByteArrayWithChannels(
-      isVfoA ? picked : s.channelA,
-      isVfoA ? s.channelB : picked,
-      s.doubleChannel, s.scan, s.squelchLevel,
+      s.channelA, s.channelB,
+      isVfoA ? 1 : 2,
+      s.scan, s.squelchLevel,
     ));
+  }
+
+  /// Long-press a VFO display → edit that slot's channel properties
+  /// (name, freq, modulation, bandwidth, power, flags). If the VFO is
+  /// in ad-hoc frequency mode the sentinel channel id is edited
+  /// directly; in channel mode the current channel slot is edited.
+  Future<void> _onVfoEdit(bool isVfoA) async {
+    if (_settings == null) return;
+    final chId = isVfoA ? _settings!.channelA : _settings!.channelB;
+    RadioChannelInfo? current;
+    if (chId >= 0 && chId < _channels.length && _channels[chId] != null) {
+      current = _channels[chId];
+    } else if (chId == 0xFC) {
+      current = _vfoAInfo;
+    } else if (chId == 0xFB) {
+      current = _vfoBInfo;
+    }
+    if (current == null) return;
+
+    final edited = await showDialog<RadioChannelInfo>(
+      context: context,
+      builder: (_) => ChannelEditorDialog(channel: current),
+    );
+    if (edited == null) return;
+    // Preserve the channelId — the editor dialog copies from the source
+    // but we want to make sure we overwrite the same slot.
+    edited.channelId = current.channelId;
+
+    final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
+    radio?.setChannel(edited);
   }
 
   // ── PTT ────────────────────────────────────────────────────────────
@@ -481,15 +583,18 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
             ),
             const SizedBox(height: 8),
 
-            // VFO A
+            // VFO A — "active" means the radio is TX/RX'ing on it.
+            // settings.doubleChannel: 1 = A, 2 = B (0 = both).
             VfoDisplay(
               label: 'VFO A',
               frequency: _vfoAFreq,
               channelName: _vfoAName,
               modulation: 'FM',
-              isActive: true,
+              isActive: _settings?.doubleChannel != 2,
               isPrimary: true,
               onTap: () => _onVfoTap(true),
+              onLongPress: () => _onVfoEdit(true),
+              onActivate: () => _onVfoActivate(true),
             ),
             const SizedBox(height: 8),
 
@@ -498,9 +603,11 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
               label: 'VFO B',
               frequency: _vfoBFreq,
               channelName: _vfoBName,
-              isActive: false,
+              isActive: _settings?.doubleChannel == 2,
               isPrimary: false,
               onTap: () => _onVfoTap(false),
+              onLongPress: () => _onVfoEdit(false),
+              onActivate: () => _onVfoActivate(false),
             ),
             const SizedBox(height: 20),
 

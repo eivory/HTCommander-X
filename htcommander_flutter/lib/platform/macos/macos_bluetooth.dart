@@ -29,8 +29,19 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   bool _connected = false;
   int _nextId = 1;
   final Map<int, Completer<Map<String, dynamic>>> _pending = {};
+  final StreamController<Uint8List> _rxPcmCtrl =
+      StreamController<Uint8List>.broadcast();
 
   MacOsRadioBluetooth(this._address);
+
+  /// Classic-BT MAC address for the audio RFCOMM channel. macOS doesn't
+  /// expose a MAC to apps, so we pass the CoreBluetooth UUID through —
+  /// bendio's macOS RFCOMM layer resolves both.
+  String get address => _address;
+
+  /// Stream of decoded PCM chunks from bendio (s16le, 32 kHz, mono).
+  /// Fires once per SBC frame (roughly every 4 ms during RX audio).
+  Stream<Uint8List> get rxPcmStream => _rxPcmCtrl.stream;
 
   @override
   bool get isConnected => _connected;
@@ -130,6 +141,55 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       print('[RX] $hex');
       final bytes = _hexDecode(hex);
       onDataReceived?.call(null, bytes);
+    } else if (method == 'audio_rx_pcm') {
+      final params = msg['params'] as Map<String, dynamic>?;
+      final hex = params?['bytes'] as String?;
+      if (hex == null) return;
+      if (_rxPcmCtrl.hasListener) {
+        _rxPcmCtrl.add(_hexDecode(hex));
+      }
+    }
+  }
+
+  // ── Audio (RFCOMM channel 2 via bendio) ────────────────────────────
+
+  /// Ask bendio to open the audio RFCOMM channel. Returns true on success.
+  Future<bool> audioOpen() async {
+    if (!_connected || _proc == null) return false;
+    final result = await _call('audio_open', {'address': _address});
+    if (result.containsKey('error')) {
+      // ignore: avoid_print
+      print('[macos-bt] audio_open error: ${result['error']}');
+      return false;
+    }
+    return true;
+  }
+
+  Future<void> audioClose() async {
+    if (_proc == null) return;
+    await _call('audio_close', {});
+  }
+
+  int _txPcmCalls = 0;
+  int _txPcmErrors = 0;
+
+  /// Send PCM (s16le, 32 kHz, mono) to the radio via SBC encode in bendio.
+  void audioTxPcm(Uint8List pcm) {
+    if (!_connected || _proc == null) return;
+    _txPcmCalls++;
+    try {
+      _proc!.stdin.writeln(jsonEncode({
+        'jsonrpc': '2.0',
+        'id': _nextId++,
+        'method': 'audio_tx_pcm',
+        'params': {'bytes': _hexEncode(pcm)},
+      }));
+    } catch (e) {
+      _txPcmErrors++;
+      if (_txPcmErrors <= 3) {
+        // ignore: avoid_print
+        print('[macos-bt] audio_tx_pcm write #$_txPcmCalls failed: $e');
+      }
     }
   }
 
@@ -151,8 +211,15 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       'params': params,
     });
     _proc!.stdin.writeln(req);
+    // macOS CoreBluetooth's first connect regularly takes 10–25 s while
+    // the system resolves the per-device UUID. RFCOMM audio open can
+    // also take 5–10 s while the server blocks its asyncio loop pumping
+    // the NSRunLoop. Everything else is fast — a 15 s cap is plenty.
+    final timeout = (method == 'connect' || method == 'audio_open')
+        ? const Duration(seconds: 45)
+        : const Duration(seconds: 15);
     return completer.future.timeout(
-      const Duration(seconds: 15),
+      timeout,
       onTimeout: () {
         _pending.remove(id);
         return {
@@ -216,6 +283,7 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       }
     }
     _pending.clear();
+    if (!_rxPcmCtrl.isClosed) _rxPcmCtrl.close();
   }
 
   static String _hexEncode(Uint8List bytes) {

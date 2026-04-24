@@ -1,4 +1,9 @@
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:crypto/crypto.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../handlers/torrent_handler.dart';
 import '../widgets/glass_card.dart';
@@ -33,8 +38,35 @@ class _TorrentScreenState extends State<TorrentScreen> {
     }
   }
 
-  void _addFile() {
-    // Placeholder: in the future, open a file picker and dispatch TorrentAddFile
+  Future<void> _addFile() async {
+    final result = await FilePicker.platform.pickFiles(
+      dialogTitle: 'Add file to torrent',
+      withData: true,
+    );
+    if (result == null || result.files.isEmpty) return;
+
+    final picked = result.files.first;
+    Uint8List? bytes = picked.bytes;
+    if (bytes == null && picked.path != null) {
+      bytes = await File(picked.path!).readAsBytes();
+    }
+    if (bytes == null) return;
+
+    final md5Hash = md5.convert(bytes).toString();
+    final totalBlocks =
+        (bytes.length + TorrentFile.defaultBlockSize - 1) ~/
+            TorrentFile.defaultBlockSize;
+    final file = TorrentFile(
+      id: md5Hash,
+      fileName: picked.name,
+      fileSize: bytes.length,
+      mode: 'idle',
+      totalBlocks: totalBlocks,
+      receivedBlocks: totalBlocks, // we're the source, so it's fully "received"
+      fileData: bytes,
+      md5Hash: md5Hash,
+    );
+    DataBroker.dispatch(0, 'TorrentAddFile', file, store: false);
   }
 
   void _activate() {

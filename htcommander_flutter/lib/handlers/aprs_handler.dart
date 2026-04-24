@@ -5,6 +5,7 @@ import '../radio/ax25/ax25_packet.dart';
 import '../radio/aprs/aprs_packet.dart';
 import '../radio/aprs/message_data.dart';
 import '../radio/aprs/packet_data_type.dart';
+import '../radio/models/radio_channel_info.dart';
 
 /// Data class for APRS message send requests.
 class AprsSendMessageData {
@@ -379,9 +380,18 @@ class AprsHandler {
     final channels =
         DataBroker.getValueDynamic(radioDeviceId, 'Channels');
     if (channels is! List) return -1;
+    // Prefer an explicit user-set override; otherwise auto-detect a
+    // channel named "APRS" (case-insensitive).
+    final override = DataBroker.getValue<int>(0, 'AprsChannelId', -1);
+    if (override >= 0 && override < channels.length && channels[override] is RadioChannelInfo) {
+      return override;
+    }
     for (var i = 0; i < channels.length; i++) {
       final ch = channels[i];
-      if (ch != null && ch is Map && ch['name'] == 'APRS') return i;
+      if (ch is RadioChannelInfo &&
+          ch.nameStr.toUpperCase() == 'APRS') {
+        return i;
+      }
     }
     return -1;
   }
