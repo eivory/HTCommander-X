@@ -6,6 +6,7 @@ import '../radio/aprs/aprs_packet.dart';
 import '../radio/aprs/message_data.dart';
 import '../radio/aprs/packet_data_type.dart';
 import '../radio/models/radio_channel_info.dart';
+import '../radio/radio.dart' show TransmitDataFrameData;
 
 /// Data class for APRS message send requests.
 class AprsSendMessageData {
@@ -19,19 +20,6 @@ class AprsSendMessageData {
     required this.message,
     required this.radioDeviceId,
     this.route,
-  });
-}
-
-/// Data class for TransmitDataFrame events.
-class TransmitDataFrameData {
-  final AX25Packet packet;
-  final int channelId;
-  final int regionId;
-
-  const TransmitDataFrameData({
-    required this.packet,
-    required this.channelId,
-    this.regionId = -1,
   });
 }
 
@@ -261,11 +249,22 @@ class AprsHandler {
     ax25Packet.channelId = aprsChannelId;
     ax25Packet.channelName = 'APRS';
 
-    // Dispatch to radio for transmission
+    // Encode the AX.25 frame and dispatch to the radio for TX.
+    final packetBytes = ax25Packet.toByteArray();
+    if (packetBytes == null) {
+      _broker.logError('Cannot send APRS message: AX.25 encode failed');
+      return;
+    }
+    // ignore: avoid_print
+    print('[APRS-TX] dispatching ${packetBytes.length} bytes to '
+        'radio ${messageData.radioDeviceId} on channel $aprsChannelId');
     _broker.dispatch(
       messageData.radioDeviceId,
       'TransmitDataFrame',
-      TransmitDataFrameData(packet: ax25Packet, channelId: aprsChannelId),
+      TransmitDataFrameData(
+        packetData: packetBytes,
+        channelId: aprsChannelId,
+      ),
       store: false,
     );
 
@@ -347,10 +346,18 @@ class AprsHandler {
     ackPacket.channelId = aprsChannelId;
     ackPacket.channelName = 'APRS';
 
+    final ackBytes = ackPacket.toByteArray();
+    if (ackBytes == null) {
+      _broker.logError('APRS ACK encode failed');
+      return;
+    }
     _broker.dispatch(
       radioDeviceId,
       'TransmitDataFrame',
-      TransmitDataFrameData(packet: ackPacket, channelId: aprsChannelId),
+      TransmitDataFrameData(
+        packetData: ackBytes,
+        channelId: aprsChannelId,
+      ),
       store: false,
     );
 

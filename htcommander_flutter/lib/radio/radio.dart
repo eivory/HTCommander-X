@@ -15,6 +15,9 @@ import 'models/radio_position.dart';
 import 'models/radio_bss_settings.dart';
 import 'radio_audio_manager.dart';
 import 'models/tnc_data_fragment.dart';
+import 'ax25/ax25_address.dart';
+import 'ax25/ax25_packet.dart';
+import 'benshi_text_message.dart';
 
 /// GAIA command groups.
 class _CommandGroup {
@@ -256,8 +259,11 @@ class Radio {
       DataBroker.getValue<bool>(0, 'BluetoothFramesDebug', false);
   bool get _loopbackMode =>
       DataBroker.getValue<bool>(1, 'LoopbackMode', false);
+  // Settings store this as int (0/1) — see CLAUDE.md "Conventions". The
+  // earlier ``getValue<bool>`` lookup silently returned the default
+  // ``false`` and blocked all TX even after the user enabled it.
   bool get _allowTransmit =>
-      DataBroker.getValue<bool>(0, 'AllowTransmit', false);
+      DataBroker.getValue<int>(0, 'AllowTransmit', 0) == 1;
 
   Radio(this.deviceId, this.macAddress, [this._platformServices]) {
     // Subscribe to events on this device
@@ -650,10 +656,28 @@ class Radio {
   }
 
   void _handleDataReceived(Uint8List value) {
+    // ignore: avoid_print
+    print('[RX-DATA] len=${value.length} '
+        'hex=${BinaryUtils.bytesToHex(value)}');
     if (!hardwareModemEnabled) return;
     debug('RawData: ${BinaryUtils.bytesToHex(value)}');
 
     final fragment = TncDataFragment.fromBytes(value);
+
+    // Many DATA_RXD events on Benshi-family radios carry the radios'
+    // proprietary direct-text-message format rather than AX.25. Decode
+    // it, then re-emit as a synthesized AX.25 UI frame in standard
+    // APRS message format so the APRS handler, packet store, and any
+    // other downstream consumer of UniqueDataFrame all see it without
+    // special-casing.
+    final txt = BenshiTextMessage.tryParse(fragment.data);
+    if (txt != null) {
+      debug('Benshi text: $txt');
+      _broker.dispatch(deviceId, 'BenshiTextReceived', txt, store: false);
+      _emitBenshiTextAsAx25(txt);
+      return;
+    }
+
     fragment.encoding = FragmentEncodingType.hardwareAfsk1200;
     fragment.corrections = 0;
     if (fragment.channelId == -1 && htStatus != null) {
@@ -1035,6 +1059,11 @@ class Radio {
 
   int transmitTncData(Uint8List outboundData, {String? channelName,
       int channelId = -1, int regionId = -1, String? tag, DateTime? deadline}) {
+    // ignore: avoid_print
+    print('[APRS-TX] transmitTncData allowTransmit=$_allowTransmit '
+        'len=${outboundData.length} channelId=$channelId '
+        'rssi=${htStatus?.rssi} isInTx=${htStatus?.isInTx} '
+        'isInRx=${htStatus?.isInRx}');
     if (!_allowTransmit) return 0;
 
     if (channelId == -1 && settings != null) channelId = settings!.channelA;
@@ -1274,6 +1303,41 @@ class Radio {
     frame.radioMac = macAddress;
     frame.radioDeviceId = deviceId;
     _broker.dispatch(deviceId, 'DataFrame', frame, store: false);
+  }
+
+  /// Re-emit a Benshi proprietary text message as a synthesized AX.25
+  /// UI frame in APRS message format so the standard pipeline picks
+  /// it up. ``txt.from`` is the sender's callsign (always present);
+  /// ``txt.to`` is the addressee or empty for broadcasts. The text
+  /// body becomes ``:DEST     :TEXT`` (APRS message), stripping the
+  /// leading ``$`` separator the radio prepends.
+  void _emitBenshiTextAsAx25(BenshiTextMessage txt) {
+    final fromCall = txt.from;
+    if (fromCall.isEmpty) return;
+    final toCall = txt.to.isEmpty ? 'CQ' : txt.to;
+    final destAddr = AX25Address.getAddress('APRS');
+    final fromAddr = AX25Address.getAddress(fromCall);
+    if (destAddr == null || fromAddr == null) return;
+
+    // Strip a single leading '$' if present — that's the Benshi
+    // marker, not part of the user's text.
+    var body = txt.text;
+    if (body.startsWith(r'$')) body = body.substring(1);
+
+    final aprsMsg = ':${toCall.padRight(9)}:$body';
+    final pkt = AX25Packet.fromDataStr(
+      addresses: [destAddr, fromAddr],
+      dataStr: aprsMsg,
+      time: DateTime.now(),
+    );
+    pkt.incoming = true;
+    pkt.command = true;
+    pkt.channelName = 'BenshiText';
+
+    // Inject directly as UniqueDataFrame, bypassing the AX.25
+    // deduplicator — the radio already de-duplicated in hardware
+    // (we only get one DATA_RXD per send).
+    _broker.dispatch(deviceId, 'UniqueDataFrame', pkt, store: false);
   }
 
   /// Updates the friendly name and dispatches event.

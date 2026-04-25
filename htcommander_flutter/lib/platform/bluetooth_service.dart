@@ -85,9 +85,21 @@ abstract class PlatformServices {
   Future<List<CompatibleDevice>> scanForDevices();
 
   /// Lists available audio input/output devices for UI device pickers.
-  /// Platforms that don't support enumeration return null.
+  /// Platforms that don't support enumeration return null. When
+  /// [refresh] is true, the platform re-enumerates devices first so
+  /// newly-plugged-in hardware (AirPods, USB headsets) shows up.
   ///
   /// Shape: `{"output": [{index, name}], "input": [...],
   ///          "default_output": int, "default_input": int}`.
-  Future<Map<String, dynamic>?> listAudioDevices() async => null;
+  Future<Map<String, dynamic>?> listAudioDevices({bool refresh = false}) async =>
+      null;
+
+  /// Hot-swap the platform audio [kind] (`"input"` or `"output"`) to
+  /// the given device index. Returns true on success. Platforms
+  /// without hot-swap support return false.
+  Future<bool> setAudioDevice({
+    required String kind,
+    required int? device,
+  }) async =>
+      false;
 }

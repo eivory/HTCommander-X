@@ -170,14 +170,18 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   }
 
   /// Ask bendio for the list of available sounddevice input / output
-  /// devices. Returns the raw dict shape from the server — callers use
-  /// the ``output`` / ``input`` / ``default_*`` fields directly.
-  Future<Map<String, dynamic>?> listAudioDevices() async {
+  /// devices. When [refresh] is true, bendio re-enumerates PortAudio
+  /// so newly-plugged-in devices appear.
+  Future<Map<String, dynamic>?> listAudioDevices({bool refresh = false}) async {
     if (!_connected || _proc == null) return null;
-    final result = await _call('list_audio_devices', {});
-    // ignore: avoid_print
-    print('[macos-bt] list_audio_devices raw: $result');
-    if (result.containsKey('error')) return null;
+    final params = <String, dynamic>{};
+    if (refresh) params['refresh'] = true;
+    final result = await _call('list_audio_devices', params);
+    if (result.containsKey('error')) {
+      // ignore: avoid_print
+      print('[macos-bt] list_audio_devices error: ${result['error']}');
+      return null;
+    }
     final r = result['result'];
     if (r is Map) {
       return r.map((k, v) => MapEntry(k.toString(), v));
@@ -209,6 +213,33 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   Future<void> audioTxStop() async {
     if (_proc == null) return;
     await _call('audio_tx_stop', {});
+  }
+
+  /// Mute/unmute local speaker playback in bendio without tearing down
+  /// the RFCOMM channel. The radio's own Mute setting only affects the
+  /// HT's internal speaker; this covers the Mac speaker side.
+  Future<void> audioSetMuted(bool muted) async {
+    if (!_connected || _proc == null) return;
+    await _call('audio_set_muted', {'muted': muted});
+  }
+
+  /// Hot-swap the currently active audio device without closing
+  /// RFCOMM. [kind] is ``"input"`` or ``"output"``. [device] is the
+  /// sounddevice index (null / -1 = system default). Returns true if
+  /// bendio reported the swap applied.
+  Future<bool> audioSetDevice({
+    required String kind,
+    required int? device,
+  }) async {
+    if (!_connected || _proc == null) return false;
+    final params = <String, dynamic>{
+      'kind': kind,
+      'device': device ?? -1,
+    };
+    final result = await _call('audio_set_device', params);
+    if (result.containsKey('error')) return false;
+    final r = result['result'];
+    return r is Map && r['applied'] == true;
   }
 
   int _txPcmCalls = 0;

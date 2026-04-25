@@ -13,6 +13,7 @@ import 'handlers/audio_clip_handler.dart';
 import 'handlers/torrent_handler.dart';
 import 'handlers/bbs_handler.dart';
 import 'handlers/voice_handler.dart';
+import 'radio/software_modem.dart';
 import 'handlers/winlink_client.dart';
 import 'handlers/virtual_audio_bridge.dart';
 import 'handlers/server_stubs.dart';
@@ -31,6 +32,7 @@ import 'servers/web_server.dart';
 /// Mirrors C# MainWindow.InitializeDataHandlers().
 void initializeDataHandlers() {
   DataBroker.addDataHandler('FrameDeduplicator', FrameDeduplicator());
+  DataBroker.addDataHandler('SoftwareModem', SoftwareModem());
   DataBroker.addDataHandler('PacketStore', PacketStore());
   DataBroker.addDataHandler('AprsHandler', AprsHandler());
   DataBroker.addDataHandler('LogStore', LogStore());

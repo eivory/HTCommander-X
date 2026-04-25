@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../handlers/aprs_handler.dart';
+import '../radio/benshi_text_message.dart';
 import '../radio/models/radio_channel_info.dart';
 import '../radio/models/radio_ht_status.dart';
 import '../radio/radio_enums.dart';
@@ -43,6 +44,7 @@ class _AprsScreenState extends State<AprsScreen> {
     _broker.subscribe(0, 'AprsChannelId', (_, __, ___) => setState(() {}));
     _broker.subscribe(100, 'HtStatus', _onHtStatus);
     _broker.subscribe(100, 'State', _onState);
+    _broker.subscribe(100, 'BenshiTextReceived', _onBenshiText);
     // Seed current TX state and radio connection in case they were
     // published before we subscribed.
     final status = DataBroker.getValueDynamic(100, 'HtStatus');
@@ -52,6 +54,9 @@ class _AprsScreenState extends State<AprsScreen> {
     }
     final state = DataBroker.getValue<String>(100, 'State', '');
     _isConnected = state.toLowerCase() == 'connected';
+    // Enable/disable the SEND button as the user types.
+    _destinationController.addListener(() => setState(() {}));
+    _messageController.addListener(() => setState(() {}));
     // Load initial data
     _loadEntries();
   }
@@ -77,6 +82,22 @@ class _AprsScreenState extends State<AprsScreen> {
     setState(() => _isConnected = connected);
   }
 
+  void _onBenshiText(int deviceId, String name, Object? data) {
+    if (!mounted || data is! BenshiTextMessage) return;
+    final msg = data;
+    final label = msg.to.isEmpty
+        ? '${msg.from} (broadcast): ${msg.text}'
+        : '${msg.from} → ${msg.to}: ${msg.text}';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Direct text — $label',
+            style: const TextStyle(fontSize: 11)),
+        duration: const Duration(seconds: 5),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _onHtStatus(int deviceId, String name, Object? data) {
     if (!mounted || data is! RadioHtStatus) return;
     if (_isTransmitting == data.isInTx && _rssi == data.rssi) return;
@@ -84,6 +105,60 @@ class _AprsScreenState extends State<AprsScreen> {
       _isTransmitting = data.isInTx;
       _rssi = data.rssi;
     });
+  }
+
+  // ── APRS message send ─────────────────────────────────────────────
+
+  /// Enable the SEND button only when we have all the ingredients:
+  /// connected radio, detected APRS channel, a destination callsign,
+  /// and a non-empty message.
+  bool _canSend() {
+    return _isConnected &&
+        _aprsChannelId() >= 0 &&
+        _destinationController.text.trim().isNotEmpty &&
+        _messageController.text.trim().isNotEmpty;
+  }
+
+  /// Dispatches a ``SendAprsMessage`` event. AprsHandler builds the
+  /// AX.25 UI frame and routes it to the radio via TransmitDataFrame.
+  ///
+  /// ``_selectedRoute`` is the string from the ROUTE dropdown
+  /// ("WIDE1-1,WIDE2-1", "Direct", etc.). We split it into the
+  /// digipeater list that AprsHandler expects as
+  /// ``route = [<source-placeholder>, <destination>, <digis...>]``.
+  /// The source is filled in by the handler from settings; we just
+  /// pass an empty string as a placeholder at index 0.
+  void _sendAprsMessage() {
+    final destination = _destinationController.text.trim();
+    final message = _messageController.text.trim();
+    if (destination.isEmpty || message.isEmpty) return;
+
+    final digis = _selectedRoute == 'Direct'
+        ? <String>[]
+        : _selectedRoute
+            .split(',')
+            .map((s) => s.trim())
+            .where((s) => s.isNotEmpty)
+            .toList();
+
+    // AprsHandler expects index 1 = destination, index 2+ = digipeaters.
+    final route = <String>['', 'APRS', ...digis];
+
+    DataBroker.dispatch(
+      1,
+      'SendAprsMessage',
+      AprsSendMessageData(
+        destination: destination,
+        message: message,
+        radioDeviceId: 100,
+        route: route,
+      ),
+      store: false,
+    );
+
+    // Clear the message so the user can type the next one.
+    _messageController.clear();
+    setState(() {});
   }
 
   /// Returns the RX frequency of the detected APRS channel formatted
@@ -842,7 +917,7 @@ class _AprsScreenState extends State<AprsScreen> {
           Padding(
             padding: const EdgeInsets.only(top: 12),
             child: FilledButton(
-              onPressed: () {},
+              onPressed: _canSend() ? _sendAprsMessage : null,
               style: FilledButton.styleFrom(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
