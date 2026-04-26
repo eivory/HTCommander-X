@@ -27,7 +27,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _SettingsCategory('Winlink', Icons.email),
     _SettingsCategory('Servers', Icons.dns),
     _SettingsCategory('Data Sources', Icons.storage),
-    _SettingsCategory('Audio', Icons.volume_up),
     _SettingsCategory('Modem', Icons.router),
   ];
 
@@ -71,11 +70,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _repeaterBookState = '';
 
   // Audio
-  double _volume = 8;
-  double _squelch = 3;
-  double _outputVolume = 75;
-  bool _mute = false;
-  double _micGain = 100;
 
   // Modem
   String _modemMode = 'None';
@@ -139,13 +133,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         DataBroker.getValue<String>(0, 'RepeaterBookCountry', 'United States');
     _repeaterBookState =
         DataBroker.getValue<String>(0, 'RepeaterBookState', '');
-
-    _volume = DataBroker.getValue<int>(0, 'Volume', 8).toDouble();
-    _squelch = DataBroker.getValue<int>(0, 'Squelch', 3).toDouble();
-    _outputVolume =
-        DataBroker.getValue<int>(0, 'OutputVolume', 75).toDouble();
-    _mute = DataBroker.getValue<int>(0, 'Mute', 0) == 1;
-    _micGain = DataBroker.getValue<int>(0, 'MicGain', 100).toDouble();
 
     _modemMode = DataBroker.getValue<String>(0, 'ModemMode', 'None');
 
@@ -303,8 +290,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         return _buildServers(colors);
       case 'Data Sources':
         return _buildDataSources(colors);
-      case 'Audio':
-        return _buildAudio(colors);
       case 'Modem':
         return _buildModem(colors);
       default:
@@ -469,6 +454,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Audio configuration (device pickers + Linux virtual routing).
+        // Operational audio levels live on the Communication pane.
+        if (Platform.isMacOS) ...[
+          const SizedBox(height: 10),
+          _buildMacAudioDevicesCard(colors),
+        ],
+        const SizedBox(height: 10),
+        GlassCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _sectionLabel('VIRTUAL AUDIO', colors),
+              const SizedBox(height: 12),
+              _checkboxRow(
+                'Enabled',
+                _virtualAudioEnabled,
+                (v) {
+                  setState(() => _virtualAudioEnabled = v);
+                  _broker.dispatch(0, 'VirtualAudioEnabled', v ? 1 : 0);
+                },
+                colors,
+              ),
+              Padding(
+                padding: const EdgeInsets.only(top: 4, left: 28),
+                child: Text(
+                  'Route radio audio through virtual PulseAudio devices for external software',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: colors.onSurfaceVariant,
                   ),
                 ),
               ),
@@ -982,151 +1002,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─── Audio ────────────────────────────────────────────────────────
-
-  Widget _buildAudio(ColorScheme colors) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionLabel('HARDWARE AUDIO', colors),
-              const SizedBox(height: 12),
-              _sliderRow(
-                'Volume',
-                _volume,
-                0,
-                15,
-                15,
-                (v) {
-                  setState(() => _volume = v);
-                  _broker.dispatch(0, 'Volume', v.round());
-                },
-                colors,
-                valueLabel: _volume.round().toString(),
-              ),
-              const SizedBox(height: 10),
-              _sliderRow(
-                'Squelch',
-                _squelch,
-                0,
-                9,
-                9,
-                (v) {
-                  setState(() => _squelch = v);
-                  _broker.dispatch(0, 'Squelch', v.round());
-                },
-                colors,
-                valueLabel: _squelch.round().toString(),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        GlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionLabel('SOFTWARE AUDIO', colors),
-              const SizedBox(height: 12),
-              Row(
-                children: [
-                  Expanded(
-                    child: _sliderRow(
-                      'Output Volume',
-                      _outputVolume,
-                      0,
-                      100,
-                      20,
-                      (v) {
-                        setState(() => _outputVolume = v);
-                        _broker.dispatch(0, 'OutputVolume', v.round());
-                      },
-                      colors,
-                      valueLabel: '${_outputVolume.round()}%',
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Column(
-                    children: [
-                      Text(
-                        'MUTE',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Switch(
-                        value: _mute,
-                        onChanged: (v) {
-                          setState(() => _mute = v);
-                          _broker.dispatch(0, 'Mute', v ? 1 : 0);
-                        },
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-              const SizedBox(height: 10),
-              _sliderRow(
-                'Mic Gain',
-                _micGain,
-                0,
-                200,
-                10,
-                (v) {
-                  setState(() => _micGain = v);
-                  _broker.dispatch(0, 'MicGain', v.round());
-                },
-                colors,
-                valueLabel: '${_micGain.round()}%',
-              ),
-            ],
-          ),
-        ),
-        if (Platform.isMacOS) ...[
-          const SizedBox(height: 10),
-          _buildMacAudioDevicesCard(colors),
-        ],
-        const SizedBox(height: 10),
-        GlassCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _sectionLabel('VIRTUAL AUDIO', colors),
-              const SizedBox(height: 12),
-              _checkboxRow(
-                'Enabled',
-                _virtualAudioEnabled,
-                (v) {
-                  setState(() => _virtualAudioEnabled = v);
-                  _broker.dispatch(0, 'VirtualAudioEnabled', v ? 1 : 0);
-                },
-                colors,
-              ),
-              Padding(
-                padding: const EdgeInsets.only(top: 4, left: 28),
-                child: Text(
-                  'Route radio audio through virtual PulseAudio devices for external software',
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─── macOS audio devices (Audio tab, macOS only) ──────────────────
+  // ─── macOS audio devices (General tab, macOS only) ──────────────────
 
   /// Speaker + Microphone dropdowns for the macOS native audio path.
   /// Both backed by the Swift ``NativeAudioPlugin`` CoreAudio
@@ -1616,68 +1492,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
             color: colors.onSurface,
           ),
         ),
-      ],
-    );
-  }
-
-  Widget _sliderRow(
-    String label,
-    double value,
-    double min,
-    double max,
-    int divisions,
-    ValueChanged<double> onChanged,
-    ColorScheme colors, {
-    String? valueLabel,
-  }) {
-    return Row(
-      children: [
-        SizedBox(
-          width: 120,
-          child: Text(
-            label.toUpperCase(),
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 1,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ),
-        Expanded(
-          child: SliderTheme(
-            data: SliderThemeData(
-              trackHeight: 3,
-              thumbShape:
-                  const RoundSliderThumbShape(enabledThumbRadius: 6),
-              overlayShape:
-                  const RoundSliderOverlayShape(overlayRadius: 14),
-              activeTrackColor: colors.primary,
-              inactiveTrackColor: colors.surfaceContainerHigh,
-              thumbColor: colors.primary,
-            ),
-            child: Slider(
-              value: value,
-              min: min,
-              max: max,
-              divisions: divisions,
-              onChanged: onChanged,
-            ),
-          ),
-        ),
-        if (valueLabel != null)
-          SizedBox(
-            width: 40,
-            child: Text(
-              valueLabel,
-              textAlign: TextAlign.end,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurface,
-              ),
-            ),
-          ),
       ],
     );
   }

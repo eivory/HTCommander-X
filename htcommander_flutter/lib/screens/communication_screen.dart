@@ -75,6 +75,16 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   AudioOutput? _audioOutput;
   bool _audioEnabled = false;
 
+  // Audio levels — operational controls (Volume/Squelch on the radio
+  // hardware via GAIA, Output Volume / Mute / Mic Gain host-side).
+  // Moved here from Settings so the user can tweak during a QSO without
+  // leaving Comms. Persisted via DataBroker on device 0.
+  double _hwVolume = 8;
+  double _hwSquelch = 3;
+  double _outputVolume = 75;
+  bool _audioMuted = false;
+  double _micGain = 100;
+
   @override
   void initState() {
     super.initState();
@@ -92,6 +102,17 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     _broker.subscribe(100, 'BatteryAsPercentage', _onBattery);
     _broker.subscribe(100, 'Position', _onPosition);
     _broker.subscribe(100, 'AudioState', _onAudioState);
+    // Radio-reported volume — only fires in response to a getVolume
+    // GAIA query reply. Knob turns on the radio do NOT propagate (see
+    // the KNOWN LIMITATION block in radio.dart's notification
+    // registration). VOL slider is effectively one-way; this
+    // subscription keeps it in sync with app-side or MCP-driven
+    // SetVolumeLevel changes.
+    _broker.subscribe(100, 'Volume', (_, __, data) {
+      if (data is int && mounted) {
+        setState(() => _hwVolume = data.toDouble());
+      }
+    });
     _broker.subscribe(1, 'SstvDecodingStarted', _onSstvDecodingStarted);
     _broker.subscribe(1, 'SstvDecodingProgress', _onSstvDecodingProgress);
     _broker.subscribe(1, 'SstvDecodingComplete', _onSstvDecodingComplete);
@@ -119,7 +140,10 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     }
 
     final settings = _broker.getValueDynamic(100, 'Settings');
-    if (settings is RadioSettings) _settings = settings;
+    if (settings is RadioSettings) {
+      _settings = settings;
+      _hwSquelch = settings.squelchLevel.toDouble();
+    }
 
     final channels = _broker.getValueDynamic(100, 'Channels');
     if (channels is List) _channels = channels.cast<RadioChannelInfo?>();
@@ -133,6 +157,13 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
 
     final pos = _broker.getValueDynamic(100, 'Position');
     if (pos is RadioPosition) _isGpsLocked = pos.isGpsLocked;
+
+    _hwVolume = _broker.getValue<int>(0, 'Volume', 8).toDouble();
+    _hwSquelch = _broker.getValue<int>(0, 'Squelch', 3).toDouble();
+    _outputVolume =
+        _broker.getValue<int>(0, 'OutputVolume', 75).toDouble();
+    _audioMuted = _broker.getValue<int>(0, 'Mute', 0) == 1;
+    _micGain = _broker.getValue<int>(0, 'MicGain', 100).toDouble();
 
     _updateVfoFromChannels();
   }
@@ -197,6 +228,9 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     if (!mounted || data is! RadioSettings) return;
     setState(() {
       _settings = data;
+      // Squelch knob turns on the radio fire htSettingsChanged
+      // notifications, so the slider follows the hardware here.
+      _hwSquelch = data.squelchLevel.toDouble();
       _updateVfoFromChannels();
     });
   }
@@ -659,9 +693,199 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                 ],
               ),
             ),
+            const SizedBox(height: 14),
+            _buildAudioLevelsCard(colors),
           ],
         ),
       ),
+    );
+  }
+
+  /// Hardware (radio-side, GAIA) + Host (Mac/PC-side) audio levels.
+  /// Lives in the Comms control panel so the operator can adjust during
+  /// a QSO. Values persist on DataBroker device 0; the ``Set*`` events
+  /// dispatched to the radio device (100) actually push to hardware /
+  /// AVAudioEngine.
+  Widget _buildAudioLevelsCard(ColorScheme colors) {
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'AUDIO LEVELS',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.5,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _audioSubheader('RADIO (HARDWARE)', colors),
+          const SizedBox(height: 4),
+          _audioSliderRow(
+            colors,
+            label: 'VOL',
+            value: _hwVolume,
+            min: 0, max: 15, divisions: 15,
+            valueLabel: _hwVolume.round().toString(),
+            onChanged: (v) {
+              setState(() => _hwVolume = v);
+              // Pushes the GAIA SET_VOLUME command to the radio. The
+              // radio's reply re-publishes 'Volume' on device 100.
+              _broker.dispatch(100, 'SetVolumeLevel', v.round(),
+                  store: false);
+              _broker.dispatch(0, 'Volume', v.round(), store: true);
+            },
+          ),
+          _audioSliderRow(
+            colors,
+            label: 'SQL',
+            value: _hwSquelch,
+            min: 0, max: 9, divisions: 9,
+            valueLabel: _hwSquelch.round().toString(),
+            onChanged: (v) {
+              setState(() => _hwSquelch = v);
+              _broker.dispatch(100, 'SetSquelchLevel', v.round(),
+                  store: false);
+              _broker.dispatch(0, 'Squelch', v.round(), store: true);
+            },
+          ),
+          const Divider(height: 14),
+          _audioSubheader('HOST (MAC)', colors),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              Expanded(
+                child: _audioSliderRow(
+                  colors,
+                  label: 'OUT',
+                  value: _outputVolume,
+                  min: 0, max: 100, divisions: 20,
+                  valueLabel: '${_outputVolume.round()}%',
+                  onChanged: (v) {
+                    setState(() => _outputVolume = v);
+                    // RadioAudioManager._onSetOutputVolume scales 0..1
+                    // and applies to the host PCM mixer (Linux/Windows).
+                    // macOS native RFCOMM plugin doesn't tap this yet —
+                    // see TODO below.
+                    _broker.dispatch(100, 'SetOutputVolume', v.round(),
+                        store: false);
+                    _broker.dispatch(0, 'OutputVolume', v.round(),
+                        store: true);
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              Tooltip(
+                message: 'Mute audio output',
+                child: Transform.scale(
+                  scale: 0.7,
+                  child: Switch(
+                    value: _audioMuted,
+                    onChanged: (v) {
+                      setState(() => _audioMuted = v);
+                      // Both: device 0 'Mute' int for macos_audio.dart
+                      // gating subscription, plus device 100 'SetMute'
+                      // bool for RadioAudioManager (Linux/Windows).
+                      _broker.dispatch(0, 'Mute', v ? 1 : 0, store: true);
+                      _broker.dispatch(100, 'SetMute', v, store: false);
+                    },
+                  ),
+                ),
+              ),
+            ],
+          ),
+          _audioSliderRow(
+            colors,
+            label: 'MIC',
+            value: _micGain,
+            min: 0, max: 200, divisions: 20,
+            valueLabel: '${_micGain.round()}%',
+            onChanged: (v) {
+              setState(() => _micGain = v);
+              // No SetMicGain handler exists yet — value is stored but
+              // not applied to the live mic stream. Wiring it up
+              // requires a gain stage in MacOsMicCapture (and the
+              // Linux/Windows mic capture paths).
+              _broker.dispatch(0, 'MicGain', v.round(), store: true);
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _audioSubheader(String text, ColorScheme colors) {
+    return Text(
+      text,
+      style: TextStyle(
+        fontSize: 8,
+        fontWeight: FontWeight.w700,
+        letterSpacing: 1.2,
+        color: colors.primary,
+      ),
+    );
+  }
+
+  Widget _audioSliderRow(
+    ColorScheme colors, {
+    required String label,
+    required double value,
+    required double min,
+    required double max,
+    required int divisions,
+    required ValueChanged<double> onChanged,
+    required String valueLabel,
+  }) {
+    return Row(
+      children: [
+        SizedBox(
+          width: 32,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1,
+              color: colors.onSurfaceVariant,
+            ),
+          ),
+        ),
+        Expanded(
+          child: SliderTheme(
+            data: SliderThemeData(
+              trackHeight: 3,
+              thumbShape:
+                  const RoundSliderThumbShape(enabledThumbRadius: 5),
+              overlayShape:
+                  const RoundSliderOverlayShape(overlayRadius: 12),
+              activeTrackColor: colors.primary,
+              inactiveTrackColor: colors.surfaceContainerHigh,
+              thumbColor: colors.primary,
+            ),
+            child: Slider(
+              value: value.clamp(min, max),
+              min: min,
+              max: max,
+              divisions: divisions,
+              onChanged: onChanged,
+            ),
+          ),
+        ),
+        SizedBox(
+          width: 38,
+          child: Text(
+            valueLabel,
+            textAlign: TextAlign.end,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: colors.onSurface,
+            ),
+          ),
+        ),
+      ],
     );
   }
 

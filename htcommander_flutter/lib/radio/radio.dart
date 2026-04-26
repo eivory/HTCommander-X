@@ -463,6 +463,18 @@ class Radio {
             _Notification.bssSettingsChanged);
         _sendCommandInt(_CommandGroup.basic, _BasicCmd.registerNotification,
             _Notification.dataTxd);
+        // KNOWN LIMITATION: the Benshi radio does not push volume-knob
+        // changes via any notification we've identified. Probed by
+        // registering for radioStatusChanged (8), userAction (9), and
+        // systemEvent (10) — only notify=8 fires, once at connect with
+        // an all-zeros payload (a status snapshot, not a knob event).
+        // RadioSettings/HtStatus byte layouts also have no volume
+        // field. To track knob turns we'd need to poll getVolume()
+        // periodically (extra GAIA traffic). The VOL slider in
+        // CommunicationScreen is therefore one-way: it pushes via
+        // SetVolumeLevel, but doesn't auto-follow the hardware knob.
+        // Squelch IS pushed — it lives in RadioSettings and rides the
+        // htSettingsChanged notification we already register above.
         if (_gpsEnabled) {
           _sendCommandInt(_CommandGroup.basic, _BasicCmd.registerNotification,
               _Notification.positionChange);

@@ -65,6 +65,17 @@ class RfcommAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             let address = args?["address"] as? String ?? ""
             let muted = args?["muted"] as? Bool ?? false
             let outputDeviceUid = args?["outputDevice"] as? String
+            // Hot restart in Flutter re-runs Dart main() but keeps the
+            // Swift plugin alive. If the prior Dart session left a
+            // session open here, IOBluetooth still considers RFCOMM
+            // channel 2 in use and a fresh open fails with
+            // kIOReturnError (-536870212 / 0xE00002BC). Tear down any
+            // existing session first to make `open` idempotent.
+            if let existing = self.session {
+                NSLog("RfcommAudio: open() found stale session — closing")
+                existing.stop()
+                self.session = nil
+            }
             do {
                 let s = try RfcommAudioSession(address: address, onPcm: { [weak self] pcm in
                     DispatchQueue.main.async {
@@ -214,7 +225,25 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
         device = dev
 
         var ch: IOBluetoothRFCOMMChannel?
-        let status = dev.openRFCOMMChannelSync(&ch, withChannelID: 2, delegate: self)
+        var status = dev.openRFCOMMChannelSync(&ch, withChannelID: 2, delegate: self)
+
+        // IOBluetooth doesn't fully release RFCOMM channel 2 the
+        // instant we call channel.close() — on rapid disconnect /
+        // reconnect cycles a fresh openRFCOMMChannelSync hits
+        // kIOReturnError because the prior channel is still
+        // half-tearing-down. Closing the BR/EDR ACL forces IOBluetooth
+        // to drop everything, then we retry. The BLE/GATT link uses a
+        // separate radio + ACL on Apple Silicon Macs, so this doesn't
+        // affect the CoreBluetooth peripheral.
+        if status == kIOReturnError {
+            NSLog("RfcommAudio: first open got kIOReturnError, "
+                + "closing BR/EDR ACL and retrying once")
+            dev.closeConnection()
+            Thread.sleep(forTimeInterval: 0.3)
+            ch = nil
+            status = dev.openRFCOMMChannelSync(&ch, withChannelID: 2, delegate: self)
+        }
+
         guard status == kIOReturnSuccess, let openCh = ch else {
             // Decode common IOReturn codes so the failure isn't an
             // opaque negative integer next time. Full table is in
@@ -222,14 +251,14 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
             let hex = String(format: "0x%08X", UInt32(bitPattern: status))
             let hint: String
             switch status {
-            case kIOReturnBusy:           hint = " (kIOReturnBusy — channel already open from prior session, try power-cycling the radio)"
+            case kIOReturnError:
+                hint = " (kIOReturnError — generic. Common causes: RFCOMM channel still in use from a prior Dart session (hot restart leaves Swift state alive), or BR/EDR ACL down. Try power-cycling the radio, or full-quit the app)"
+            case kIOReturnBusy:           hint = " (kIOReturnBusy — channel already open)"
             case kIOReturnExclusiveAccess:hint = " (kIOReturnExclusiveAccess — another process owns the channel)"
             case kIOReturnNotOpen:        hint = " (kIOReturnNotOpen — device link not up)"
             case kIOReturnTimeout:        hint = " (kIOReturnTimeout — device unresponsive)"
             case kIOReturnNoDevice:       hint = " (kIOReturnNoDevice — paired record exists but device unreachable)"
             case kIOReturnNotPermitted:   hint = " (kIOReturnNotPermitted)"
-            case Int32(bitPattern: 0xE0002EFC):
-                hint = " (likely RFCOMM channel still half-open from prior session — power-cycle the radio)"
             default:                      hint = ""
             }
             NSLog("RfcommAudio: openRFCOMMChannelSync failed status=\(status) (\(hex))\(hint)")

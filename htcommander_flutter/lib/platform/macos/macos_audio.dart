@@ -50,6 +50,17 @@ class MacOsAudioOutput implements AudioOutput {
       _started = false;
       return;
     }
+    // The RFCOMM open can take 300ms+ when the retry path fires (see
+    // RfcommAudioPlugin). If AudioState flapped to false during the
+    // await, ``stop()`` ran and disposed ``_broker``. Continuing here
+    // would touch a disposed broker. Bail out cleanly so the next
+    // start() (on a fresh instance) can take over.
+    if (!_started) {
+      // ignore: avoid_print
+      print('[MacOsAudioOutput] stopped during RFCOMM open — aborting setup');
+      unawaited(_rfcomm.close());
+      return;
+    }
     // ignore: avoid_print
     print('[MacOsAudioOutput] RFCOMM open succeeded');
 
