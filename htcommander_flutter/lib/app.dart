@@ -84,6 +84,14 @@ class _AppShellState extends State<AppShell> {
   bool get _isConnected => _radioState == 'connected';
   bool get _isConnecting => _radioState == 'connecting';
 
+  // SettingsScreen lives in the IndexedStack (index 11) instead of
+  // replacing it. Switching to/from Settings keeps CommunicationScreen
+  // (and its audio session) mounted — without this, Settings nav
+  // disposed CommunicationScreen, which in turn stopped MacOsAudioOutput
+  // and (on macOS) used to cascade-tear-down the BR/EDR ACL link the
+  // BLE/GATT side rides on. The kAudioOutputUnitProperty_CurrentDevice
+  // hot-swap is also free now that the engine doesn't restart.
+  static const _settingsStackIndex = 11;
   static const _screens = <Widget>[
     CommunicationScreen(), // 0
     ContactsScreen(),      // 1
@@ -96,14 +104,17 @@ class _AppShellState extends State<AppShell> {
     AprsScreen(),          // 8
     MapScreen(),           // 9 (not in sidebar)
     DebugScreen(),         // 10 (not in sidebar)
+    SettingsScreen(),      // 11 (overlay-style; toggled via _showSettings)
   ];
 
   Widget _buildScreenArea() {
-    if (_showSettings) return const SettingsScreen();
-    return IndexedStack(
-      index: _directScreenIndex ?? _sidebarToScreen[_selectedSidebarIndex],
-      children: _screens,
-    );
+    final int index;
+    if (_showSettings) {
+      index = _settingsStackIndex;
+    } else {
+      index = _directScreenIndex ?? _sidebarToScreen[_selectedSidebarIndex];
+    }
+    return IndexedStack(index: index, children: _screens);
   }
 
   @override

@@ -43,6 +43,8 @@ class NativeAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         switch call.method {
         case "listInputDevices":
             result(Self.listInputDevices())
+        case "listOutputDevices":
+            result(Self.listOutputDevices())
         case "startMic":
             let args = call.arguments as? [String: Any]
             let deviceUid = args?["deviceUid"] as? String
@@ -166,8 +168,103 @@ class NativeAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         return out
     }
 
+    /// Enumerate CoreAudio output devices. Mirrors ``listInputDevices``
+    /// but filters by output-channel count instead of input. Returned
+    /// UIDs are what ``RfcommAudioPlugin.setOutputDevice`` accepts.
+    static func listOutputDevices() -> [[String: Any]] {
+        var propsAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDevices,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var dataSize: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(
+            AudioObjectID(kAudioObjectSystemObject), &propsAddr, 0, nil, &dataSize
+        ) == noErr else { return [] }
+        let count = Int(dataSize) / MemoryLayout<AudioDeviceID>.size
+        var ids = [AudioDeviceID](repeating: 0, count: count)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject), &propsAddr, 0, nil, &dataSize, &ids
+        ) == noErr else { return [] }
+
+        var defaultOutput: AudioDeviceID = 0
+        var defaultAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        _ = AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defaultAddr, 0, nil, &defSize, &defaultOutput
+        )
+
+        var out: [[String: Any]] = []
+        for id in ids {
+            var streamAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyStreamConfiguration,
+                mScope: kAudioDevicePropertyScopeOutput,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var bufSize: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(
+                id, &streamAddr, 0, nil, &bufSize
+            ) == noErr, bufSize > 0 else { continue }
+            let bufList = UnsafeMutablePointer<AudioBufferList>.allocate(
+                capacity: Int(bufSize)
+            )
+            defer { bufList.deallocate() }
+            guard AudioObjectGetPropertyData(
+                id, &streamAddr, 0, nil, &bufSize, bufList
+            ) == noErr else { continue }
+            let buffers = UnsafeMutableAudioBufferListPointer(bufList)
+            var totalChannels: UInt32 = 0
+            for b in buffers { totalChannels += b.mNumberChannels }
+            if totalChannels == 0 { continue }
+
+            var uidAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceUID,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var uid: Unmanaged<CFString>?
+            var uidSize = UInt32(MemoryLayout<Unmanaged<CFString>>.size)
+            _ = AudioObjectGetPropertyData(
+                id, &uidAddr, 0, nil, &uidSize, &uid
+            )
+            let uidStr = uid?.takeRetainedValue() as String? ?? "\(id)"
+
+            var nameAddr = AudioObjectPropertyAddress(
+                mSelector: kAudioDevicePropertyDeviceNameCFString,
+                mScope: kAudioObjectPropertyScopeGlobal,
+                mElement: kAudioObjectPropertyElementMain
+            )
+            var name: Unmanaged<CFString>?
+            var nameSize = UInt32(MemoryLayout<Unmanaged<CFString>>.size)
+            _ = AudioObjectGetPropertyData(
+                id, &nameAddr, 0, nil, &nameSize, &name
+            )
+            let nameStr = name?.takeRetainedValue() as String? ?? "Device \(id)"
+
+            out.append([
+                "id": uidStr,
+                "name": nameStr,
+                "default": id == defaultOutput,
+            ])
+        }
+        return out
+    }
+
     private func startMic(deviceUid: String?) throws {
-        stopMic()
+        // Defensive cleanup. ``stopMic`` early-returns when ``running``
+        // is false, so a previously-failed start (tap installed but
+        // engine.start threw) leaves a stale tap on bus 0. The next
+        // start would then crash with `'nullptr == Tap()'` and abort
+        // the whole app. Always remove any tap before installing a new
+        // one — removeTap is a no-op when none is installed.
+        engine.inputNode.removeTap(onBus: 0)
+        engine.stop()
+        running = false
 
         // Resolve the chosen device (if any) to an AudioDeviceID and tell
         // AVAudioEngine to use it. Nil = system default input.
@@ -259,7 +356,13 @@ class NativeAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
         }
 
         engine.prepare()
-        try engine.start()
+        do {
+            try engine.start()
+        } catch {
+            // Roll back the tap so the next start has a clean bus 0.
+            engine.inputNode.removeTap(onBus: 0)
+            throw error
+        }
         running = true
     }
 
@@ -272,7 +375,7 @@ class NativeAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
 
     // MARK: - UID → AudioDeviceID
 
-    private static func deviceId(forUid uid: String) -> AudioDeviceID? {
+    static func deviceId(forUid uid: String) -> AudioDeviceID? {
         var propsAddr = AudioObjectPropertyAddress(
             mSelector: kAudioHardwarePropertyDevices,
             mScope: kAudioObjectPropertyScopeGlobal,

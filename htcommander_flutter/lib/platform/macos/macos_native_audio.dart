@@ -29,6 +29,18 @@ class MacOsNativeAudio {
         .toList();
   }
 
+  /// List CoreAudio output devices. Same shape as [listInputDevices].
+  /// Pass the ``id`` to ``MacOsNativeRfcommAudio.setOutputDevice`` to
+  /// route AVAudioEngine playback to the chosen device.
+  Future<List<Map<String, dynamic>>> listOutputDevices() async {
+    final raw = await _method.invokeListMethod<dynamic>('listOutputDevices');
+    if (raw == null) return const [];
+    return raw
+        .whereType<Map>()
+        .map((m) => m.map((k, v) => MapEntry(k.toString(), v)))
+        .toList();
+  }
+
   /// Start mic capture; the returned [Stream] yields 32 kHz mono
   /// s16le PCM chunks. Caller is responsible for shipping the chunks
   /// to bendio's ``audio_tx_pcm``. Pass a CoreAudio device UID or null

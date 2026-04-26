@@ -6,7 +6,6 @@ import 'package:flutter/material.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../dialogs/aprs_route_dialog.dart';
-import '../platform/bluetooth_service.dart';
 import '../platform/macos/macos_native_audio.dart';
 import '../widgets/glass_card.dart';
 
@@ -1129,13 +1128,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ─── macOS audio devices (Audio tab, macOS only) ──────────────────
 
-  /// Speaker + Microphone dropdowns for the macOS bendio-subprocess
-  /// audio path. Bendio exposes a device list via ``list_audio_devices``
-  /// and accepts ``output_device`` / ``input_device`` (sounddevice
-  /// indices) at audio start. Choices are stored under DataBroker keys
-  /// ``MacOsOutputDevice`` / ``MacOsInputDevice`` so they survive a
-  /// disconnect/reconnect. A Refresh control re-enumerates PortAudio
-  /// so devices plugged in mid-session (AirPods, USB headsets) appear.
+  /// Speaker + Microphone dropdowns for the macOS native audio path.
+  /// Both backed by the Swift ``NativeAudioPlugin`` CoreAudio
+  /// enumeration. Choices stored as CoreAudio UID strings (stable
+  /// across reboots) under ``MacOsOutputDeviceUid`` /
+  /// ``MacOsInputDeviceUid``. SPEAKER hot-swaps the AVAudioEngine
+  /// output unit via ``MacOsNativeRfcommAudio.setOutputDevice``;
+  /// MICROPHONE applies on the next PTT. REFRESH re-queries CoreAudio
+  /// so newly-plugged hardware (AirPods, USB headsets) appears.
   int _macAudioRefreshNonce = 0;
 
   Widget _buildMacAudioDevicesCard(ColorScheme colors) {
@@ -1147,11 +1147,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             children: [
               Expanded(child: _sectionLabel('macOS AUDIO DEVICES', colors)),
               InkWell(
-                onTap: () async {
-                  await PlatformServices.instance
-                      ?.listAudioDevices(refresh: true);
-                  setState(() => _macAudioRefreshNonce++);
-                },
+                onTap: () => setState(() => _macAudioRefreshNonce++),
                 borderRadius: BorderRadius.circular(4),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(
@@ -1177,69 +1173,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
             ],
           ),
           const SizedBox(height: 12),
-          FutureBuilder<Map<String, dynamic>?>(
-            key: ValueKey('mac-audio-$_macAudioRefreshNonce'),
-            future: _fetchMacAudioDevices(),
-            builder: (context, snap) {
-              if (snap.connectionState != ConnectionState.done) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Row(
-                    children: [
-                      SizedBox(
-                        width: 12, height: 12,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 1.5,
-                          color: colors.primary,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Text(
-                        'Querying…',
-                        style: TextStyle(
-                          fontSize: 11, color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }
-              final data = snap.data;
-              final outputs = (data?['output'] as List?)
-                      ?.cast<Map<String, dynamic>>() ?? [];
-              final defaultOut = data?['default_output'] as int? ?? -1;
-              return Column(
-                children: [
-                  if (data == null)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Text(
-                        'Connect the radio to populate speaker list.',
-                        style: TextStyle(
-                          fontSize: 11, color: colors.onSurfaceVariant,
-                        ),
-                      ),
-                    )
-                  else
-                    _audioDeviceDropdown(
-                      colors,
-                      label: 'SPEAKER',
-                      devices: outputs,
-                      stored: DataBroker.getValue<int>(
-                          0, 'MacOsOutputDevice', -1),
-                      defaultIndex: defaultOut,
-                      prefsKey: 'MacOsOutputDevice',
-                    ),
-                  const SizedBox(height: 8),
-                  _nativeMicDropdown(colors),
-                ],
-              );
-            },
-          ),
+          _nativeSpeakerDropdown(colors),
+          const SizedBox(height: 8),
+          _nativeMicDropdown(colors),
           const SizedBox(height: 10),
           Text(
-            'Changes apply immediately. Tap REFRESH after plugging in '
-            'AirPods or a USB headset to see them in the list.',
+            'SPEAKER applies immediately (brief audio glitch). MICROPHONE '
+            'applies on next PTT. Tap REFRESH after plugging in AirPods '
+            'or a USB headset.',
             style: TextStyle(
               fontSize: 10,
               color: colors.outline,
@@ -1251,30 +1192,110 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _audioDeviceDropdown(
+  /// Speaker dropdown backed by ``NativeAudioPlugin.listOutputDevices``.
+  /// Stores the chosen CoreAudio UID under ``MacOsOutputDeviceUid`` and
+  /// hot-swaps the active AVAudioEngine output via ``setOutputDevice``.
+  Widget _nativeSpeakerDropdown(ColorScheme colors) {
+    final nativeAudio = MacOsNativeAudio();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey('mac-spk-$_macAudioRefreshNonce'),
+      future: nativeAudio.listOutputDevices().catchError(
+            (_) => <Map<String, dynamic>>[],
+          ),
+      builder: (context, snap) {
+        final devices = snap.data ?? const <Map<String, dynamic>>[];
+        final stored =
+            DataBroker.getValue<String>(0, 'MacOsOutputDeviceUid', '');
+        final items = <DropdownMenuItem<String>>[
+          const DropdownMenuItem(
+            value: '',
+            child: Text('System default', style: TextStyle(fontSize: 11)),
+          ),
+          ...devices.map((d) {
+            final uid = d['id'] as String? ?? '';
+            final name = d['name'] as String? ?? uid;
+            final isDefault = d['default'] == true;
+            final label = isDefault ? '$name  (default)' : name;
+            return DropdownMenuItem<String>(
+              value: uid,
+              child: Text(label, style: const TextStyle(fontSize: 11)),
+            );
+          }),
+        ];
+        final value = items.any((i) => i.value == stored) ? stored : '';
+        return _uidDropdownRow(
+          colors,
+          label: 'SPEAKER',
+          value: value,
+          items: items,
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {});
+            // Persist + broadcast — MacOsAudioOutput subscribes to
+            // this and calls setOutputDevice on the open session.
+            DataBroker.dispatch(0, 'MacOsOutputDeviceUid', v);
+          },
+        );
+      },
+    );
+  }
+
+  /// Microphone dropdown backed by the native Swift AVAudioEngine
+  /// plugin. CoreAudio UIDs (strings) are used as the stable device
+  /// identifier, stored under ``MacOsInputDeviceUid``.
+  Widget _nativeMicDropdown(ColorScheme colors) {
+    final nativeAudio = MacOsNativeAudio();
+    return FutureBuilder<List<Map<String, dynamic>>>(
+      key: ValueKey('mac-mic-$_macAudioRefreshNonce'),
+      future: nativeAudio.listInputDevices().catchError(
+            (_) => <Map<String, dynamic>>[],
+          ),
+      builder: (context, snap) {
+        final devices = snap.data ?? const <Map<String, dynamic>>[];
+        final stored =
+            DataBroker.getValue<String>(0, 'MacOsInputDeviceUid', '');
+        final items = <DropdownMenuItem<String>>[
+          const DropdownMenuItem(
+            value: '',
+            child: Text('System default', style: TextStyle(fontSize: 11)),
+          ),
+          ...devices.map((d) {
+            final uid = d['id'] as String? ?? '';
+            final name = d['name'] as String? ?? uid;
+            final isDefault = d['default'] == true;
+            final label = isDefault ? '$name  (default)' : name;
+            return DropdownMenuItem<String>(
+              value: uid,
+              child: Text(label, style: const TextStyle(fontSize: 11)),
+            );
+          }),
+        ];
+        final value = items.any((i) => i.value == stored) ? stored : '';
+        return _uidDropdownRow(
+          colors,
+          label: 'MICROPHONE',
+          value: value,
+          items: items,
+          onChanged: (v) {
+            if (v == null) return;
+            setState(() {});
+            DataBroker.dispatch(0, 'MacOsInputDeviceUid', v);
+            // Mic picks up the new device on next PTT; no hot path
+            // here because CoreAudio won't swap mic mid-capture
+            // without tearing the engine down.
+          },
+        );
+      },
+    );
+  }
+
+  Widget _uidDropdownRow(
     ColorScheme colors, {
     required String label,
-    required List<Map<String, dynamic>> devices,
-    required int stored,
-    required int defaultIndex,
-    required String prefsKey,
+    required String value,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?> onChanged,
   }) {
-    final items = <DropdownMenuItem<int>>[
-      const DropdownMenuItem<int>(
-        value: -1,
-        child: Text('System default', style: TextStyle(fontSize: 11)),
-      ),
-      ...devices.map((d) {
-        final idx = d['index'] as int;
-        final name = d['name'] as String;
-        final displayLabel = idx == defaultIndex ? '$name  (default)' : name;
-        return DropdownMenuItem<int>(
-          value: idx,
-          child: Text(displayLabel, style: const TextStyle(fontSize: 11)),
-        );
-      }),
-    ];
-    final value = items.any((i) => i.value == stored) ? stored : -1;
     return Row(
       children: [
         SizedBox(
@@ -1298,113 +1319,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               borderRadius: BorderRadius.circular(4),
               border: Border.all(color: colors.outlineVariant),
             ),
-            child: DropdownButton<int>(
+            child: DropdownButton<String>(
               value: value,
               underline: const SizedBox(),
               isDense: true,
               isExpanded: true,
               dropdownColor: colors.surfaceContainerHigh,
               items: items,
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {});
-                DataBroker.dispatch(0, prefsKey, v);
-                // Hot-swap if audio is already running so the user
-                // doesn't have to reconnect the radio after plugging
-                // in AirPods etc.
-                final kind = label == 'MICROPHONE' ? 'input' : 'output';
-                unawaited(
-                  PlatformServices.instance?.setAudioDevice(
-                        kind: kind,
-                        device: v < 0 ? null : v,
-                      ) ??
-                      Future.value(false),
-                );
-              },
+              onChanged: onChanged,
             ),
           ),
         ),
       ],
-    );
-  }
-
-  Future<Map<String, dynamic>?> _fetchMacAudioDevices() async {
-    return PlatformServices.instance?.listAudioDevices();
-  }
-
-  /// Microphone dropdown backed by the native Swift AVAudioEngine
-  /// plugin (not bendio/sounddevice). CoreAudio UIDs (strings) are
-  /// used as the stable device identifier, stored under
-  /// ``MacOsInputDeviceUid``.
-  Widget _nativeMicDropdown(ColorScheme colors) {
-    final nativeAudio = MacOsNativeAudio();
-    return FutureBuilder<List<Map<String, dynamic>>>(
-      future: nativeAudio.listInputDevices().catchError((_) => <Map<String, dynamic>>[]),
-      builder: (context, snap) {
-        final devices = snap.data ?? const <Map<String, dynamic>>[];
-        final stored =
-            DataBroker.getValue<String>(0, 'MacOsInputDeviceUid', '');
-        final items = <DropdownMenuItem<String>>[
-          const DropdownMenuItem(
-            value: '',
-            child: Text('System default', style: TextStyle(fontSize: 11)),
-          ),
-          ...devices.map((d) {
-            final uid = d['id'] as String? ?? '';
-            final name = d['name'] as String? ?? uid;
-            final isDefault = d['default'] == true;
-            final label = isDefault ? '$name  (default)' : name;
-            return DropdownMenuItem<String>(
-              value: uid,
-              child: Text(label, style: const TextStyle(fontSize: 11)),
-            );
-          }),
-        ];
-        final value = items.any((i) => i.value == stored) ? stored : '';
-        return Row(
-          children: [
-            SizedBox(
-              width: 120,
-              child: Text(
-                'MICROPHONE',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w600,
-                  letterSpacing: 1,
-                  color: colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            Expanded(
-              child: Container(
-                height: 32,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: colors.surfaceContainerLow,
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: colors.outlineVariant),
-                ),
-                child: DropdownButton<String>(
-                  value: value,
-                  underline: const SizedBox(),
-                  isDense: true,
-                  isExpanded: true,
-                  dropdownColor: colors.surfaceContainerHigh,
-                  items: items,
-                  onChanged: (v) {
-                    if (v == null) return;
-                    setState(() {});
-                    DataBroker.dispatch(0, 'MacOsInputDeviceUid', v);
-                    // Mic picks up the new device on next PTT; no hot
-                    // path here because CoreAudio won't swap mic mid-
-                    // capture without tearing the engine down.
-                  },
-                ),
-              ),
-            ),
-          ],
-        );
-      },
     );
   }
 

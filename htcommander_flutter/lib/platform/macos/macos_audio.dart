@@ -36,10 +36,13 @@ class MacOsAudioOutput implements AudioOutput {
 
     // ignore: avoid_print
     print('[MacOsAudioOutput] opening native RFCOMM audio for ${bt.address}');
+    final storedOutUid =
+        _broker.getValue<String>(0, 'MacOsOutputDeviceUid', '');
     try {
       await _rfcomm.open(
         address: bt.address,
         muted: _broker.getValue<int>(0, 'Mute', 0) != 0,
+        outputDevice: storedOutUid.isEmpty ? null : storedOutUid,
       );
     } catch (e) {
       // ignore: avoid_print
@@ -65,6 +68,19 @@ class MacOsAudioOutput implements AudioOutput {
     _broker.subscribe(0, 'Mute', (_, __, ___) => applyMute());
     _broker.subscribe(100, 'Settings', (_, __, ___) => applyMute());
     _broker.subscribe(100, 'Channels', (_, __, ___) => applyMute());
+
+    // Hot-swap the output device when the user picks a new SPEAKER in
+    // Settings → Audio. Stored as a CoreAudio UID string.
+    _broker.subscribe(0, 'MacOsOutputDeviceUid', (_, __, value) {
+      final uid = value is String ? value : '';
+      // ignore: avoid_print
+      print('[MacOsAudioOutput] swap output device → '
+          '${uid.isEmpty ? "(system default)" : uid}');
+      unawaited(_rfcomm.setOutputDevice(uid).catchError((Object e) {
+        // ignore: avoid_print
+        print('[MacOsAudioOutput] setOutputDevice failed: $e');
+      }));
+    });
 
     // Default the software modem to AFSK1200 on first audio open so
     // APRS decoding just works. User can override via Modem settings.

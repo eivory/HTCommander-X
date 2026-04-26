@@ -1,4 +1,5 @@
 import AVFoundation
+import CoreAudio
 import FlutterMacOS
 import Foundation
 import IOBluetooth
@@ -63,6 +64,7 @@ class RfcommAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             let args = call.arguments as? [String: Any]
             let address = args?["address"] as? String ?? ""
             let muted = args?["muted"] as? Bool ?? false
+            let outputDeviceUid = args?["outputDevice"] as? String
             do {
                 let s = try RfcommAudioSession(address: address, onPcm: { [weak self] pcm in
                     DispatchQueue.main.async {
@@ -70,6 +72,7 @@ class RfcommAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
                     }
                 })
                 s.muted = muted
+                s.pendingOutputDeviceUid = outputDeviceUid
                 try s.start()
                 self.session = s
                 result(["opened": true, "channel": 2])
@@ -102,6 +105,15 @@ class RfcommAudioPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
             let m = args?["muted"] as? Bool ?? false
             session?.muted = m
             result([:])
+        case "setOutputDevice":
+            let args = call.arguments as? [String: Any]
+            let uid = args?["device"] as? String
+            do {
+                try session?.setOutputDevice(uid: (uid?.isEmpty ?? true) ? nil : uid)
+                result([:])
+            } catch {
+                result(FlutterError(code: "set_output_failed", message: "\(error)", details: nil))
+            }
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -157,6 +169,11 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// flowing to ``onPcm`` (so the software modem still sees audio).
     var muted: Bool = false
 
+    /// Output device UID to bind the AVAudioEngine output unit to.
+    /// Set before ``start()`` to apply at engine startup. Use
+    /// ``setOutputDevice(uid:)`` to hot-swap after start.
+    var pendingOutputDeviceUid: String?
+
     init(address: String, onPcm: @escaping (Data) -> Void) throws {
         self.address = address
         self.onPcm = onPcm
@@ -199,8 +216,26 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
         var ch: IOBluetoothRFCOMMChannel?
         let status = dev.openRFCOMMChannelSync(&ch, withChannelID: 2, delegate: self)
         guard status == kIOReturnSuccess, let openCh = ch else {
+            // Decode common IOReturn codes so the failure isn't an
+            // opaque negative integer next time. Full table is in
+            // <IOKit/IOReturn.h>; these are the ones we've seen.
+            let hex = String(format: "0x%08X", UInt32(bitPattern: status))
+            let hint: String
+            switch status {
+            case kIOReturnBusy:           hint = " (kIOReturnBusy — channel already open from prior session, try power-cycling the radio)"
+            case kIOReturnExclusiveAccess:hint = " (kIOReturnExclusiveAccess — another process owns the channel)"
+            case kIOReturnNotOpen:        hint = " (kIOReturnNotOpen — device link not up)"
+            case kIOReturnTimeout:        hint = " (kIOReturnTimeout — device unresponsive)"
+            case kIOReturnNoDevice:       hint = " (kIOReturnNoDevice — paired record exists but device unreachable)"
+            case kIOReturnNotPermitted:   hint = " (kIOReturnNotPermitted)"
+            case Int32(bitPattern: 0xE0002EFC):
+                hint = " (likely RFCOMM channel still half-open from prior session — power-cycle the radio)"
+            default:                      hint = ""
+            }
+            NSLog("RfcommAudio: openRFCOMMChannelSync failed status=\(status) (\(hex))\(hint)")
             throw NSError(domain: "RfcommAudio", code: 2, userInfo: [
-                NSLocalizedDescriptionKey: "openRFCOMMChannelSync failed: \(status)",
+                NSLocalizedDescriptionKey:
+                    "openRFCOMMChannelSync failed: \(status) \(hex)\(hint)",
             ])
         }
         channel = openCh
@@ -211,11 +246,19 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
     /// Send the EOT sequence three times (50 ms gaps), wait briefly
     /// for the radio to settle, then close the RFCOMM channel and
     /// stop AVAudioEngine. Idempotent.
+    ///
+    /// **Do not call ``device.closeConnection()`` here.** macOS shares
+    /// the BR/EDR ACL link between IOBluetooth (RFCOMM) and
+    /// CoreBluetooth (GATT) for the same physical device. Tearing
+    /// down the ACL kills the BLE/GATT indication stream too — the
+    /// radio's onboard LED stays lit but the app loses its only
+    /// command channel until the radio is power-cycled. Closing the
+    /// RFCOMM channel alone is enough to stop audio cleanly.
     func stop() {
         defer {
             channel?.close()
             channel = nil
-            device?.closeConnection()
+            // device kept open intentionally — see comment above.
             device = nil
             engine.stop()
             sourceNode = nil
@@ -324,8 +367,80 @@ final class RfcommAudioSession: NSObject, IOBluetoothRFCOMMChannelDelegate {
         sourceNode = node
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
+
+        // Bind to the requested output device BEFORE engine.start() so
+        // CoreAudio doesn't have to re-route mid-stream. Nil = system
+        // default (whatever the user picked in System Settings).
+        if let uid = pendingOutputDeviceUid, !uid.isEmpty {
+            applyOutputDevice(uid: uid)
+        }
+
         engine.prepare()
         try engine.start()
+    }
+
+    /// Hot-swap the AVAudioEngine output device. Stops the engine,
+    /// rebinds the output unit's ``kAudioOutputUnitProperty_CurrentDevice``,
+    /// then restarts. There is a small audio glitch but it's the
+    /// least-bad option — AVAudioEngine doesn't expose a live retarget.
+    func setOutputDevice(uid: String?) throws {
+        pendingOutputDeviceUid = uid
+        guard sourceNode != nil else { return } // engine never started
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.stop() }
+        if let uid = uid, !uid.isEmpty {
+            applyOutputDevice(uid: uid)
+        } else {
+            applySystemDefaultOutput()
+        }
+        if wasRunning {
+            engine.prepare()
+            try engine.start()
+        }
+    }
+
+    private func applyOutputDevice(uid: String) {
+        guard let devId = NativeAudioPlugin.deviceId(forUid: uid) else {
+            NSLog("RfcommAudio: no CoreAudio device matched UID \(uid)")
+            return
+        }
+        var devVar = devId
+        let unit = engine.outputNode.audioUnit!
+        let status = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &devVar,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
+        if status != noErr {
+            NSLog("RfcommAudio: AudioUnitSetProperty(CurrentDevice) failed: \(status)")
+        }
+    }
+
+    private func applySystemDefaultOutput() {
+        var defId: AudioDeviceID = 0
+        var defAddr = AudioObjectPropertyAddress(
+            mSelector: kAudioHardwarePropertyDefaultOutputDevice,
+            mScope: kAudioObjectPropertyScopeGlobal,
+            mElement: kAudioObjectPropertyElementMain
+        )
+        var defSize = UInt32(MemoryLayout<AudioDeviceID>.size)
+        guard AudioObjectGetPropertyData(
+            AudioObjectID(kAudioObjectSystemObject),
+            &defAddr, 0, nil, &defSize, &defId
+        ) == noErr else { return }
+        var devVar = defId
+        let unit = engine.outputNode.audioUnit!
+        _ = AudioUnitSetProperty(
+            unit,
+            kAudioOutputUnitProperty_CurrentDevice,
+            kAudioUnitScope_Global,
+            0,
+            &devVar,
+            UInt32(MemoryLayout<AudioDeviceID>.size)
+        )
     }
 }
 

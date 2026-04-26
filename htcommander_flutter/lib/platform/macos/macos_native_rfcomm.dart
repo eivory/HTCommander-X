@@ -23,11 +23,24 @@ class MacOsNativeRfcommAudio {
   /// Benshi-family radios. If the user hasn't paired in System
   /// Settings → Bluetooth, throws a ``PlatformException`` with a
   /// user-readable message.
-  Future<void> open({required String address, bool muted = false}) async {
+  Future<void> open({
+    required String address,
+    bool muted = false,
+    String? outputDevice,
+  }) async {
     await _method.invokeMethod('open', {
       'address': address,
       'muted': muted,
+      if (outputDevice != null && outputDevice.isNotEmpty)
+        'outputDevice': outputDevice,
     });
+  }
+
+  /// Hot-swap the AVAudioEngine output device by CoreAudio UID. Pass
+  /// null/empty to revert to system default. Causes a brief glitch
+  /// because AVAudioEngine doesn't support live retargeting.
+  Future<void> setOutputDevice(String? uid) async {
+    await _method.invokeMethod('setOutputDevice', {'device': uid ?? ''});
   }
 
   Future<void> close() async {
