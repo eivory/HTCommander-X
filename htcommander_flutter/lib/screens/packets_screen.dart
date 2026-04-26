@@ -1,3 +1,4 @@
+import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
@@ -179,15 +180,19 @@ class _PacketsScreenState extends State<PacketsScreen> {
                 ],
               ),
             )
-          : SingleChildScrollView(
-              child: SizedBox(
-                width: double.infinity,
-                child: DataTable(
+          : DataTable2(
+                  // fixedTopRows: 1 keeps the header row pinned while
+                  // the body scrolls vertically. Horizontal overflow
+                  // is handled internally by the package.
+                  fixedTopRows: 1,
+                  // Hide the leading checkbox column. Row-tap selection
+                  // still works via onSelectChanged.
+                  showCheckboxColumn: false,
                   headingRowHeight: 32,
-                  dataRowMinHeight: 28,
-                  dataRowMaxHeight: 32,
+                  dataRowHeight: 32,
                   columnSpacing: 16,
                   horizontalMargin: 14,
+                  minWidth: 600,
                   headingTextStyle: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
@@ -196,12 +201,14 @@ class _PacketsScreenState extends State<PacketsScreen> {
                   ),
                   dataTextStyle: TextStyle(fontSize: 11, color: colors.onSurface),
                   columns: const [
-                    DataColumn(label: Text('TIMESTAMP')),
-                    DataColumn(label: Text('SOURCE > DEST')),
-                    DataColumn(label: Text('TYPE')),
-                    DataColumn(label: Text('PAYLOAD DATA')),
+                    DataColumn2(label: Text('TIMESTAMP'), fixedWidth: 80),
+                    DataColumn2(label: Text('SOURCE > DEST'), fixedWidth: 100),
+                    DataColumn2(label: Text('TYPE'), fixedWidth: 40),
+                    DataColumn2(label: Text('PAYLOAD DATA'), size: ColumnSize.L),
                   ],
-                  rows: List.generate(_packets.length, (i) {
+                  // Newest first.
+                  rows: List.generate(_packets.length, (k) {
+                    final i = _packets.length - 1 - k;
                     final p = _packets[i];
                     final selected = _selectedIndex == i;
                     final from = p.addresses.length > 1
@@ -245,8 +252,6 @@ class _PacketsScreenState extends State<PacketsScreen> {
                     );
                   }),
                 ),
-              ),
-            ),
     );
   }
 
@@ -275,7 +280,7 @@ class _PacketsScreenState extends State<PacketsScreen> {
                       ),
                     )
                   : SingleChildScrollView(
-                      child: Text(
+                      child: SelectableText(
                         'From: ${packet.addresses.length > 1 ? packet.addresses[1].toString() : ''}\n'
                         'To: ${packet.addresses.isNotEmpty ? packet.addresses[0].toString() : ''}\n'
                         'Type: ${_getFrameTypeName(packet)}\n'

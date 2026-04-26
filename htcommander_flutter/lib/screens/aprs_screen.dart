@@ -1,4 +1,7 @@
+import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
+import 'package:latlong2/latlong.dart';
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../handlers/aprs_handler.dart';
@@ -23,6 +26,8 @@ class _AprsScreenState extends State<AprsScreen> {
   bool _isTransmitting = false;
   bool _isConnected = false;
   int _rssi = 0; // 0–15 S-meter scale from HtStatus
+  int? _selectedEntryIndex;
+  final MapController _mapController = MapController();
   String _selectedRoute = 'WIDE1-1,WIDE2-1';
   final TextEditingController _destinationController = TextEditingController();
   final TextEditingController _messageController = TextEditingController();
@@ -105,6 +110,21 @@ class _AprsScreenState extends State<AprsScreen> {
       _isTransmitting = data.isInTx;
       _rssi = data.rssi;
     });
+  }
+
+  /// Click handler for an APRS table row. Selects the row and, if the
+  /// underlying packet has valid lat/lon, recentres + zooms the map
+  /// onto that station's marker.
+  void _onAprsRowSelected(int index) {
+    setState(() => _selectedEntryIndex = index);
+    if (index < 0 || index >= _entries.length) return;
+    final entry = _entries[index];
+    final pos = entry.packet.position;
+    if (!pos.isValid) return;
+    final lat = pos.coordinateSet.latitude.value;
+    final lon = pos.coordinateSet.longitude.value;
+    if (lat == 0 && lon == 0) return;
+    _mapController.move(LatLng(lat, lon), 14);
   }
 
   // ── APRS message send ─────────────────────────────────────────────
@@ -225,6 +245,7 @@ class _AprsScreenState extends State<AprsScreen> {
     _broker.dispose();
     _destinationController.dispose();
     _messageController.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
@@ -317,7 +338,7 @@ class _AprsScreenState extends State<AprsScreen> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                // --- Right column (flex 2): Map placeholder ---
+                // --- Right column (flex 2): full-height map ---
                 Expanded(
                   flex: 2,
                   child: _buildMapPlaceholder(colors, sectionStyle),
@@ -477,7 +498,25 @@ class _AprsScreenState extends State<AprsScreen> {
   Widget _buildFeedPanel(ColorScheme colors, TextStyle sectionStyle) {
     return GlassCard(
       padding: EdgeInsets.zero,
-      child: Column(
+      child: Stack(
+        children: [
+          _buildFeedPanelBody(colors, sectionStyle),
+          if (_selectedEntryIndex != null &&
+              _selectedEntryIndex! < _entries.length)
+            Positioned(
+              top: 12,
+              right: 12,
+              width: 320,
+              height: 260,
+              child: _buildAprsDecodePanel(colors, sectionStyle),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFeedPanelBody(ColorScheme colors, TextStyle sectionStyle) {
+    return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header row
@@ -551,15 +590,17 @@ class _AprsScreenState extends State<AprsScreen> {
           ),
           // Table
           Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SingleChildScrollView(
-                child: DataTable(
+            child: DataTable2(
+                  // fixedTopRows: 1 keeps the header pinned during
+                  // vertical scroll. Horizontal overflow is handled
+                  // internally by the package.
+                  fixedTopRows: 1,
+                  showCheckboxColumn: false,
                   headingRowHeight: 32,
-                  dataRowMinHeight: 28,
-                  dataRowMaxHeight: 32,
+                  dataRowHeight: 32,
                   columnSpacing: 24,
                   horizontalMargin: 16,
+                  minWidth: 600,
                   headingTextStyle: TextStyle(
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
@@ -571,22 +612,34 @@ class _AprsScreenState extends State<AprsScreen> {
                     color: colors.onSurface,
                   ),
                   columns: const [
-                    DataColumn(label: Text('CALLSIGN')),
-                    DataColumn(label: Text('SSID')),
-                    DataColumn(label: Text('POSITION')),
-                    DataColumn(label: Text('DISTANCE')),
-                    DataColumn(label: Text('LAST HEARD')),
+                    // Fits the worst case: 6-char call + ``-`` + 2-digit
+                    // SSID (e.g. WA1ABCD-15) plus the leading status dot.
+                    DataColumn2(label: Text('CALLSIGN'), fixedWidth: 130),
+                    DataColumn2(label: Text('POSITION'), size: ColumnSize.M),
+                    DataColumn2(label: Text('DISTANCE'), size: ColumnSize.S),
+                    DataColumn2(label: Text('LAST HEARD'), size: ColumnSize.S),
                   ],
-                  rows: _entries.map((entry) {
-                    // Split callsign and SSID
-                    final parts = entry.from.split('-');
-                    final callsign = parts.isNotEmpty ? parts[0] : entry.from;
-                    final ssid = parts.length > 1 ? '-${parts[1]}' : '';
+                  // Newest first: the underlying handler appends, so
+                  // reverse the list view (the original index is still
+                  // captured for selection / map zoom).
+                  rows: _entries
+                      .asMap()
+                      .entries
+                      .toList()
+                      .reversed
+                      .map((kv) {
+                    final index = kv.key;
+                    final entry = kv.value;
+                    // Use the full from including SSID — single column.
+                    final callsign = entry.from;
 
                     final typeColor =
                         _typeColor(entry.packet.dataType.name);
 
-                    return DataRow(cells: [
+                    return DataRow(
+                      selected: _selectedEntryIndex == index,
+                      onSelectChanged: (_) => _onAprsRowSelected(index),
+                      cells: [
                       DataCell(Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
@@ -609,13 +662,6 @@ class _AprsScreenState extends State<AprsScreen> {
                         ],
                       )),
                       DataCell(Text(
-                        ssid,
-                        style: TextStyle(
-                          fontSize: 10,
-                          color: colors.onSurfaceVariant,
-                        ),
-                      )),
-                      DataCell(Text(
                         _formatPosition(entry),
                         style: const TextStyle(
                           fontSize: 10,
@@ -633,11 +679,182 @@ class _AprsScreenState extends State<AprsScreen> {
                     ]);
                   }).toList(),
                 ),
+          ),
+        ],
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // Decode panel — shows the parsed contents of the currently-selected
+  // APRS row. Mirrors the Packets pane decode panel so users can see
+  // the full message body without truncation.
+  Widget _buildAprsDecodePanel(ColorScheme colors, TextStyle sectionStyle) {
+    final entry = (_selectedEntryIndex != null &&
+            _selectedEntryIndex! < _entries.length)
+        ? _entries[_selectedEntryIndex!]
+        : null;
+    return GlassCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'MESSAGE DETAILS',
+                  style: sectionStyle.copyWith(color: colors.onSurfaceVariant),
+                ),
               ),
+              InkWell(
+                onTap: () => setState(() => _selectedEntryIndex = null),
+                borderRadius: BorderRadius.circular(4),
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: Icon(Icons.close, size: 14, color: colors.outline),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: colors.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: entry == null
+                  ? Center(
+                      child: Text(
+                        'Select an APRS row to view decode',
+                        style: TextStyle(fontSize: 11, color: colors.outline),
+                      ),
+                    )
+                  : SingleChildScrollView(
+                      child: SelectableText(
+                        _formatAprsDecode(entry),
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontFamily: 'monospace',
+                          color: colors.onSurface,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  String _formatAprsDecode(AprsEntry entry) {
+    final pkt = entry.packet;
+    final pos = pkt.position;
+    final lines = <String>[
+      'Time:    ${entry.time.toLocal()}',
+      'From:    ${entry.from}',
+      'To:      ${entry.to}',
+      'Type:    ${pkt.dataType.name}',
+      'Channel: ${entry.ax25Packet.channelName}',
+    ];
+    if (pos.isValid) {
+      final lat = pos.coordinateSet.latitude.value;
+      final lon = pos.coordinateSet.longitude.value;
+      if (!(lat == 0 && lon == 0)) {
+        lines.add('Lat:     ${lat.toStringAsFixed(5)}');
+        lines.add('Lon:     ${lon.toStringAsFixed(5)}');
+        if (pos.gridsquare.isNotEmpty) {
+          lines.add('Grid:    ${pos.gridsquare}');
+        }
+      }
+    }
+    final raw = entry.ax25Packet.dataStr;
+    if (raw != null && raw.isNotEmpty) {
+      lines.add('');
+      lines.add('Raw:');
+      lines.add(raw);
+    }
+    return lines.join('\n');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Real APRS map: OpenStreetMap tiles + a marker per station-with-position.
+  // ---------------------------------------------------------------------------
+  Widget _buildAprsMap(ColorScheme colors) {
+    // Collect the latest position fix per callsign — APRS stations
+    // typically beacon the same position multiple times, so dedupe
+    // by callsign and keep the most recent valid coordinate.
+    final byCallsign = <String, AprsEntry>{};
+    for (final e in _entries) {
+      final pos = e.packet.position;
+      if (!pos.isValid) continue;
+      final lat = pos.coordinateSet.latitude.value;
+      final lon = pos.coordinateSet.longitude.value;
+      if (lat == 0 && lon == 0) continue;
+      final call = e.from.isNotEmpty ? e.from : e.to;
+      byCallsign[call] = e;
+    }
+
+    final markers = byCallsign.entries.map((kv) {
+      final pos = kv.value.packet.position.coordinateSet;
+      return Marker(
+        point: LatLng(pos.latitude.value, pos.longitude.value),
+        width: 64,
+        height: 36,
+        alignment: Alignment.topCenter,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.location_on, size: 18, color: colors.primary),
+            Text(
+              kv.key,
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
+                color: colors.onSurface,
+              ),
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+            ),
+          ],
+        ),
+      );
+    }).toList();
+
+    // Default center: average of stations, or a reasonable fallback
+    // when no positioned stations have been heard yet.
+    LatLng center;
+    double zoom;
+    if (markers.isEmpty) {
+      center = const LatLng(39.8283, -98.5795); // continental US center
+      zoom = 3;
+    } else {
+      final lats = markers.map((m) => m.point.latitude);
+      final lons = markers.map((m) => m.point.longitude);
+      center = LatLng(
+        (lats.reduce((a, b) => a + b)) / markers.length,
+        (lons.reduce((a, b) => a + b)) / markers.length,
+      );
+      zoom = markers.length == 1 ? 11 : 8;
+    }
+
+    return FlutterMap(
+      mapController: _mapController,
+      options: MapOptions(
+        initialCenter: center,
+        initialZoom: zoom,
+        interactionOptions:
+            const InteractionOptions(flags: InteractiveFlag.all),
+      ),
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.htcommander.htcommanderFlutter',
+        ),
+        MarkerLayer(markers: markers),
+      ],
     );
   }
 
@@ -661,38 +878,7 @@ class _AprsScreenState extends State<AprsScreen> {
                 ),
               ),
             ),
-            Expanded(
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      Icons.map_outlined,
-                      size: 64,
-                      color: colors.onSurfaceVariant.withAlpha(60),
-                    ),
-                    const SizedBox(height: 12),
-                    Text(
-                      'APRS MAP',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 2,
-                        color: colors.onSurfaceVariant.withAlpha(80),
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      'Station positions will appear here',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: colors.onSurfaceVariant.withAlpha(50),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
+            Expanded(child: _buildAprsMap(colors)),
             // Station counter badge at bottom
             Container(
               width: double.infinity,

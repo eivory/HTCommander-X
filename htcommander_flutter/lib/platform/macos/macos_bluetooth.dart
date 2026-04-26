@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import '../bluetooth_service.dart';
 import 'macos_debug.dart';
+import 'macos_native_ble.dart';
 
 /// macOS Bluetooth transport that speaks JSON-RPC to a `bendio server`
 /// subprocess over stdio.
@@ -24,6 +25,13 @@ import 'macos_debug.dart';
 ///     → onDataReceived(null, bytes)
 class MacOsRadioBluetooth extends RadioBluetoothTransport {
   final String _address;
+  // Native Swift CoreBluetooth: scan/connect/write/indicate. Replaces
+  // the bendio Python subprocess for the BLE control path.
+  final MacOsNativeBle _ble = MacOsNativeBle();
+  StreamSubscription<Uint8List>? _indicationSub;
+  // bendio still runs as a subprocess for RFCOMM audio (Phase 2 will
+  // move that to Swift IOBluetooth). All audio_* JSON-RPC methods
+  // continue to flow over its stdio.
   Process? _proc;
   StreamSubscription<String>? _stdoutSub;
   StreamSubscription<String>? _stderrSub;
@@ -49,22 +57,52 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
 
   @override
   void connect() {
-    if (_proc != null) return;
-    _spawn();
+    if (_connected || _indicationSub != null) return;
+    _connectAsync();
   }
 
-  Future<void> _spawn() async {
+  Future<void> _connectAsync() async {
+    // 1. Native CoreBluetooth connect (BLE control path).
+    try {
+      await _ble.connect(_address);
+    } catch (e) {
+      // ignore: avoid_print
+      print('[macos-bt] native BLE connect failed: $e');
+      onDataReceived?.call(Exception('BLE connect failed: $e'), null);
+      return;
+    }
+    // ignore: avoid_print
+    print('[macos-bt] native BLE connected to $_address');
+
+    // 2. Forward indications to the Radio's onDataReceived pipeline.
+    _indicationSub = _ble.indications().listen(
+      (bytes) {
+        dprint('[RX] ${_hexEncode(bytes)}');
+        onDataReceived?.call(null, bytes);
+      },
+      onError: (Object e) {
+        _connected = false;
+        onDataReceived?.call(Exception('BLE: $e'), null);
+      },
+    );
+
+    // 3. Spawn bendio for RFCOMM audio only (Phase 2 will replace).
+    await _spawnBendioForAudio();
+
+    _connected = true;
+    onConnected?.call();
+  }
+
+  Future<void> _spawnBendioForAudio() async {
     try {
       // ignore: avoid_print
-      print('[macos-bt] spawning python3 -m bendio.cli server for $_address');
+      print('[macos-bt] spawning python3 -m bendio.cli server (audio only)');
       final proc = await Process.start(
         'python3',
         ['-m', 'bendio.cli', 'server'],
         mode: ProcessStartMode.normal,
       );
       _proc = proc;
-      // ignore: avoid_print
-      print('[macos-bt] spawned pid=${proc.pid}');
 
       _stdoutSub = proc.stdout
           .transform(utf8.decoder)
@@ -80,39 +118,18 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       });
 
       unawaited(proc.exitCode.then((code) {
-        _connected = false;
-        onDataReceived?.call(
-          Exception('bendio exited (code $code)'),
-          null,
-        );
-        _cleanup();
+        // ignore: avoid_print
+        print('[macos-bt] bendio exited (code $code)');
+        _proc = null;
       }));
-
-      // ignore: avoid_print
-      print('[macos-bt] sending connect to bendio');
-      final result = await _call('connect', {'address': _address});
-      // ignore: avoid_print
-      print('[macos-bt] connect result: $result');
-      if (result.containsKey('error')) {
-        final err = result['error'] as Map<String, dynamic>;
-        onDataReceived?.call(
-          Exception('bendio connect failed: ${err['message']}'),
-          null,
-        );
-        return;
-      }
-      _connected = true;
-      onConnected?.call();
     } catch (e, st) {
+      // Audio is optional in Phase 1 — control still works without it.
       // ignore: avoid_print
-      print('[macos-bt] spawn failed: $e\n$st');
-      onDataReceived?.call(
-        Exception('Failed to start bendio: $e. '
-            'Install with: pip3 install git+https://github.com/eivory/bendio.git'),
-        null,
-      );
-      _cleanup();
+      print('[macos-bt] bendio spawn failed (audio disabled): $e');
+      // ignore: avoid_print
+      print('$st');
     }
+    return;
   }
 
   void _onLine(String line) {
@@ -132,16 +149,10 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
       return;
     }
 
-    // Server-initiated notification
+    // Only audio notifications still flow over JSON-RPC. BLE
+    // indications come via the native CoreBluetooth plugin now.
     final method = msg['method'] as String?;
-    if (method == 'ble_indication') {
-      final params = msg['params'] as Map<String, dynamic>?;
-      final hex = params?['bytes'] as String?;
-      if (hex == null) return;
-      dprint('[RX] $hex');
-      final bytes = _hexDecode(hex);
-      onDataReceived?.call(null, bytes);
-    } else if (method == 'audio_rx_pcm') {
+    if (method == 'audio_rx_pcm') {
       final params = msg['params'] as Map<String, dynamic>?;
       final hex = params?['bytes'] as String?;
       if (hex == null) return;
@@ -306,8 +317,14 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
   @override
   void disconnect() {
     _connected = false;
+    // Tear down native BLE first so the Radio's onDataReceived doesn't
+    // fire spurious indications mid-cleanup.
+    _indicationSub?.cancel();
+    _indicationSub = null;
+    unawaited(_ble.disconnect().catchError((_) {}));
     if (_proc != null) {
-      // Best-effort graceful shutdown; kill follows after a short grace period.
+      // Best-effort graceful shutdown of bendio (audio side); kill
+      // follows after a short grace period.
       try {
         _proc!.stdin.writeln(jsonEncode({
           'jsonrpc': '2.0',
@@ -324,19 +341,14 @@ class MacOsRadioBluetooth extends RadioBluetoothTransport {
 
   @override
   void enqueueWrite(int expectedResponse, Uint8List cmdData) {
-    if (!_connected || _proc == null) return;
-    final hex = _hexEncode(cmdData);
-    dprint('[TX] $hex');
-    try {
-      _proc!.stdin.writeln(jsonEncode({
-        'jsonrpc': '2.0',
-        'id': _nextId++,
-        'method': 'ble_write',
-        'params': {'bytes': hex},
-      }));
-    } catch (e) {
-      onDataReceived?.call(Exception('write failed: $e'), null);
-    }
+    if (!_connected) return;
+    dprint('[TX] ${_hexEncode(cmdData)}');
+    // Fire-and-forget write to the native CoreBluetooth plugin. The
+    // Radio class doesn't await write completion either; back-pressure
+    // is the OS pipe / GATT MTU's job.
+    unawaited(_ble.write(cmdData).catchError((Object e) {
+      onDataReceived?.call(Exception('BLE write failed: $e'), null);
+    }));
   }
 
   void _cleanup() {

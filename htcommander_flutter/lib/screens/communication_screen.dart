@@ -672,21 +672,27 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
       color: colors.surfaceContainer,
       child: Row(
         children: [
-          Text(
-            'COMMUNICATION HUB',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: colors.onSurface,
-              letterSpacing: 1,
+          Flexible(
+            child: Text(
+              'COMMUNICATION HUB',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: colors.onSurface,
+                letterSpacing: 1,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const SizedBox(width: 12),
-          Text(
-            _isConnected ? 'Connected' : 'Idle',
-            style: TextStyle(
-              fontSize: 10,
-              color: colors.onSurfaceVariant,
+          Flexible(
+            child: Text(
+              _isConnected ? 'Connected' : 'Idle',
+              style: TextStyle(
+                fontSize: 10,
+                color: colors.onSurfaceVariant,
+              ),
+              overflow: TextOverflow.ellipsis,
             ),
           ),
           const Spacer(),
