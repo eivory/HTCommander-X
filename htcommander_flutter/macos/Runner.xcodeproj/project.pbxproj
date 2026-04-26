@@ -30,6 +30,11 @@
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		41FA001A7D1C4AAB000000A1 /* NativeAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FA001B7D1C4AAB000000A1 /* NativeAudioPlugin.swift */; };
 		41FA001C7D1C4AAB000000A2 /* NativeBluetoothPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FA001D7D1C4AAB000000A2 /* NativeBluetoothPlugin.swift */; };
+		41FA00307D1C4AAB000000B0 /* sbc.c in Sources */ = {isa = PBXBuildFile; fileRef = 41FA00317D1C4AAB000000B0 /* sbc.c */; };
+		41FA00327D1C4AAB000000B1 /* sbc_primitives.c in Sources */ = {isa = PBXBuildFile; fileRef = 41FA00337D1C4AAB000000B1 /* sbc_primitives.c */; };
+		41FA00407D1C4AAB000000C0 /* SbcCodec.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FA00417D1C4AAB000000C0 /* SbcCodec.swift */; };
+		41FA00427D1C4AAB000000C1 /* SbcFraming.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FA00437D1C4AAB000000C1 /* SbcFraming.swift */; };
+		41FA00447D1C4AAB000000C2 /* RfcommAudioPlugin.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41FA00457D1C4AAB000000C2 /* RfcommAudioPlugin.swift */; };
 		587F2C1503FC3C53B7394FB8 /* Pods_Runner.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = F2CF42CDC6D5765846A72A75 /* Pods_Runner.framework */; };
 /* End PBXBuildFile section */
 
@@ -76,6 +81,17 @@
 		33CC11122044BFA00003C045 /* MainFlutterWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainFlutterWindow.swift; sourceTree = "<group>"; };
 		41FA001B7D1C4AAB000000A1 /* NativeAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeAudioPlugin.swift; sourceTree = "<group>"; };
 		41FA001D7D1C4AAB000000A2 /* NativeBluetoothPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NativeBluetoothPlugin.swift; sourceTree = "<group>"; };
+		41FA00317D1C4AAB000000B0 /* sbc.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sbc/sbc.c; sourceTree = "<group>"; };
+		41FA00337D1C4AAB000000B1 /* sbc_primitives.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = sbc/sbc_primitives.c; sourceTree = "<group>"; };
+		41FA00347D1C4AAB000000B2 /* sbc.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sbc/sbc.h; sourceTree = "<group>"; };
+		41FA00357D1C4AAB000000B2 /* sbc_primitives.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sbc/sbc_primitives.h; sourceTree = "<group>"; };
+		41FA00367D1C4AAB000000B2 /* sbc_math.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sbc/sbc_math.h; sourceTree = "<group>"; };
+		41FA00377D1C4AAB000000B2 /* sbc_tables.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sbc/sbc_tables.h; sourceTree = "<group>"; };
+		41FA00387D1C4AAB000000B2 /* config.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = sbc/config.h; sourceTree = "<group>"; };
+		41FA00397D1C4AAB000000B2 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
+		41FA00417D1C4AAB000000C0 /* SbcCodec.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SbcCodec.swift; sourceTree = "<group>"; };
+		41FA00437D1C4AAB000000C1 /* SbcFraming.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SbcFraming.swift; sourceTree = "<group>"; };
+		41FA00457D1C4AAB000000C2 /* RfcommAudioPlugin.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RfcommAudioPlugin.swift; sourceTree = "<group>"; };
 		33CEB47222A05771004F2AC0 /* Flutter-Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Debug.xcconfig"; sourceTree = "<group>"; };
 		33CEB47422A05771004F2AC0 /* Flutter-Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Flutter-Release.xcconfig"; sourceTree = "<group>"; };
 		33CEB47722A0578A004F2AC0 /* Flutter-Generated.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; name = "Flutter-Generated.xcconfig"; path = "ephemeral/Flutter-Generated.xcconfig"; sourceTree = "<group>"; };
@@ -183,6 +199,17 @@
 				33CC11122044BFA00003C045 /* MainFlutterWindow.swift */,
 				41FA001B7D1C4AAB000000A1 /* NativeAudioPlugin.swift */,
 				41FA001D7D1C4AAB000000A2 /* NativeBluetoothPlugin.swift */,
+				41FA00417D1C4AAB000000C0 /* SbcCodec.swift */,
+				41FA00437D1C4AAB000000C1 /* SbcFraming.swift */,
+				41FA00457D1C4AAB000000C2 /* RfcommAudioPlugin.swift */,
+				41FA00397D1C4AAB000000B2 /* Runner-Bridging-Header.h */,
+				41FA00317D1C4AAB000000B0 /* sbc.c */,
+				41FA00337D1C4AAB000000B1 /* sbc_primitives.c */,
+				41FA00347D1C4AAB000000B2 /* sbc.h */,
+				41FA00357D1C4AAB000000B2 /* sbc_primitives.h */,
+				41FA00367D1C4AAB000000B2 /* sbc_math.h */,
+				41FA00377D1C4AAB000000B2 /* sbc_tables.h */,
+				41FA00387D1C4AAB000000B2 /* config.h */,
 				33E51913231747F40026EE4D /* DebugProfile.entitlements */,
 				33E51914231749380026EE4D /* Release.entitlements */,
 				33CC11242044D66E0003C045 /* Resources */,
@@ -447,6 +474,11 @@
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				41FA001A7D1C4AAB000000A1 /* NativeAudioPlugin.swift in Sources */,
 				41FA001C7D1C4AAB000000A2 /* NativeBluetoothPlugin.swift in Sources */,
+				41FA00307D1C4AAB000000B0 /* sbc.c in Sources */,
+				41FA00327D1C4AAB000000B1 /* sbc_primitives.c in Sources */,
+				41FA00407D1C4AAB000000C0 /* SbcCodec.swift in Sources */,
+				41FA00427D1C4AAB000000C1 /* SbcFraming.swift in Sources */,
+				41FA00447D1C4AAB000000C2 /* RfcommAudioPlugin.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -720,8 +752,14 @@
 					"@executable_path/../Frameworks",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-U__ARM_NEON",
+					"-U__ARM_NEON__",
+				);
 			};
 			name = Debug;
 		};
@@ -740,7 +778,13 @@
 					"@executable_path/../Frameworks",
 				);
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
+				OTHER_CFLAGS = (
+					"$(inherited)",
+					"-U__ARM_NEON",
+					"-U__ARM_NEON__",
+				);
 			};
 			name = Release;
 		};

@@ -1,23 +1,21 @@
-import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
 import '../audio_service.dart';
 import '../bluetooth_service.dart';
 import 'macos_audio.dart';
 import 'macos_bluetooth.dart';
+import 'macos_native_ble.dart';
 
-/// macOS platform services. Phase A: BLE control only (no audio).
+/// macOS platform services — Phase 2.
 ///
-/// The bendio Python library handles all BLE transport via bleak; we spawn
-/// it as a subprocess per connection. Audio (Phase B) will add a second
-/// channel for SBC-encoded PCM, likely over a side stream since stdin/stdout
-/// is reserved for JSON-RPC.
+/// Pure native: ``NativeBluetoothPlugin`` (CoreBluetooth) for BLE
+/// control, ``RfcommAudioPlugin`` (IOBluetooth + libsbc +
+/// AVAudioEngine) for RFCOMM audio, ``NativeAudioPlugin``
+/// (AVAudioEngine) for mic capture. The bendio Python subprocess
+/// is no longer involved.
 class MacOsPlatformServices extends PlatformServices {
-  /// The most recently created BLE transport. Audio factories reach for
-  /// it so they can share the same bendio subprocess (there's only one,
-  /// and it owns both the BLE control channel and the RFCOMM audio
-  /// channel). Nulled out when a new radio is connected.
+  /// The most recently created BT transport. Audio factories pass
+  /// its address through to the native RFCOMM plugin.
   MacOsRadioBluetooth? _activeRadio;
 
   @override
@@ -25,22 +23,6 @@ class MacOsPlatformServices extends PlatformServices {
     final t = MacOsRadioBluetooth(macAddress);
     _activeRadio = t;
     return t;
-  }
-
-  @override
-  Future<Map<String, dynamic>?> listAudioDevices({bool refresh = false}) async {
-    // Reuses whichever bendio subprocess the active BT transport is
-    // already driving. If no radio is connected, the caller sees null.
-    return _activeRadio?.listAudioDevices(refresh: refresh);
-  }
-
-  @override
-  Future<bool> setAudioDevice({
-    required String kind,
-    required int? device,
-  }) async {
-    return _activeRadio?.audioSetDevice(kind: kind, device: device) ??
-        Future.value(false);
   }
 
   @override
@@ -52,75 +34,45 @@ class MacOsPlatformServices extends PlatformServices {
   @override
   MicCapture createMicCapture() => MacOsMicCapture(_activeRadio);
 
-  /// Scans for compatible BLE radios via the bendio JSON-RPC server.
-  ///
-  /// Spawns `bendio server` briefly, issues `scan`, then `shutdown`. Returns
-  /// the CoreBluetooth per-device UUID as the `mac` field — on macOS apps
-  /// never see a real MAC, so the UUID is what [createRadioBluetooth] needs
-  /// as the connect address.
+  /// Phase 2 TODO: native CoreAudio output-device enumeration so the
+  /// Settings → Audio → SPEAKER dropdown can repopulate. For now the
+  /// dropdown shows nothing and AVAudioEngine uses the macOS system
+  /// default. Workaround: pick the speaker in System Settings → Sound.
+  @override
+  Future<Map<String, dynamic>?> listAudioDevices({bool refresh = false}) async {
+    return null;
+  }
+
+  /// Native BLE scan via the CoreBluetooth plugin. Returns Benshi-
+  /// family radios advertised on the air, identified by their
+  /// CoreBluetooth UUID (which is what [createRadioBluetooth] needs).
   @override
   Future<List<CompatibleDevice>> scanForDevices() async {
-    Process? proc;
-    try {
-      proc = await Process.start('python3', ['-m', 'bendio.cli', 'server']);
-
-      final lines = proc.stdout
-          .transform(utf8.decoder)
-          .transform(const LineSplitter());
-
-      // Swallow stderr (progress messages) so it doesn't clog the pipe.
-      proc.stderr.drain<void>();
-
-      final req = jsonEncode({
-        'jsonrpc': '2.0',
-        'id': 1,
-        'method': 'scan',
-        'params': {'timeout': 5.0, 'only_benshi': true},
-      });
-      proc.stdin.writeln(req);
-
-      final devices = <CompatibleDevice>[];
-      await for (final line in lines) {
-        if (line.isEmpty) continue;
-        final msg = jsonDecode(line) as Map<String, dynamic>;
-        if (msg['id'] != 1) continue;
-        final result = msg['result'];
-        if (result is List) {
-          for (final entry in result) {
-            final m = entry as Map<String, dynamic>;
-            final address = (m['address'] as String?) ?? '';
-            final name = (m['name'] as String?) ?? '';
-            if (address.isEmpty) continue;
-            devices.add(CompatibleDevice(name, address));
-          }
-        }
-        break;
-      }
-
-      proc.stdin.writeln(jsonEncode({
-        'jsonrpc': '2.0',
-        'id': 2,
-        'method': 'shutdown',
-        'params': {},
-      }));
-      await proc.exitCode.timeout(const Duration(seconds: 3), onTimeout: () {
-        proc!.kill();
-        return -1;
-      });
-      return devices;
-    } catch (_) {
-      try {
-        proc?.kill();
-      } catch (_) {}
-      return [];
+    final ble = MacOsNativeBle();
+    final raw = await ble.scan(timeout: 5.0);
+    const benshiNames = [
+      'UV-PRO', 'UV-Pro', 'UV-50PRO', 'GA-5WB',
+      'VR-N75', 'VR-N76', 'VR-N7500', 'VR-N7600',
+      'RT-660', 'GMRS-PRO',
+    ];
+    final out = <CompatibleDevice>[];
+    for (final entry in raw) {
+      final id = entry['id'] as String? ?? '';
+      final name = entry['name'] as String? ?? '';
+      if (id.isEmpty) continue;
+      final isBenshi = entry['benshi_service'] == true ||
+          benshiNames.any((n) => name.toUpperCase().contains(n.toUpperCase()));
+      if (!isBenshi) continue;
+      out.add(CompatibleDevice(name, id));
     }
+    return out;
   }
 }
 
-// On macOS we don't expose a RadioAudioTransport: bendio handles the
-// RFCOMM audio channel internally and decodes/encodes SBC itself, so
-// the Radio class's Dart-side RadioAudioManager is bypassed. PCM flows
-// directly between MacOsRadioBluetooth and MacOsAudioOutput/MicCapture.
+// On macOS we don't expose a RadioAudioTransport. The Phase 2
+// RFCOMM plugin owns the RFCOMM channel + SBC codec + AVAudioEngine
+// playback in-process; the Radio class's Dart-side RadioAudioManager
+// (Linux/Windows codec path) isn't used.
 class _MacOsAudioStub implements RadioAudioTransport {
   @override
   bool get isConnected => false;

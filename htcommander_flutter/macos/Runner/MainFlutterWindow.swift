@@ -30,6 +30,12 @@ class MainFlutterWindow: NSWindow {
     NativeBluetoothPlugin.register(
       with: flutterViewController.registrar(forPlugin: "NativeBluetoothPlugin"))
 
+    // Phase 2: native RFCOMM audio (libsbc + IOBluetooth + AVAudioEngine).
+    // See Runner/RfcommAudioPlugin.swift and
+    // docs/Phase2-NativeAudio-Review.md.
+    RfcommAudioPlugin.register(
+      with: flutterViewController.registrar(forPlugin: "RfcommAudioPlugin"))
+
     super.awakeFromNib()
   }
 }
