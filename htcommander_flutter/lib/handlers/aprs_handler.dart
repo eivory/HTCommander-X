@@ -317,9 +317,17 @@ class AprsHandler {
     if (aprsPacket.dataType != PacketDataType.message) return;
     final msgData = aprsPacket.messageData;
 
-    // Don't ACK ACKs or REJs
+    // Don't ACK ACKs, REJs, bulletins, announcements, NWS, or auto-
+    // answers. Spec §14 is explicit: never acknowledge bulletins or
+    // group messages. The addressee guard below would catch most of
+    // these via the BLNxxxxx / NWS-* prefix mismatch with our
+    // callsign, but belt-and-suspenders here is cheap.
     if (msgData.msgType == MessageType.ack ||
-        msgData.msgType == MessageType.rej) {
+        msgData.msgType == MessageType.rej ||
+        msgData.msgType == MessageType.bulletin ||
+        msgData.msgType == MessageType.announcement ||
+        msgData.msgType == MessageType.nws ||
+        msgData.msgType == MessageType.autoAnswer) {
       return;
     }
 

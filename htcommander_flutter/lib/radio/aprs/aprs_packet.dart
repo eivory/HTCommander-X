@@ -4,6 +4,7 @@ import 'coordinate_set.dart';
 import 'message_data.dart';
 import 'packet_data_type.dart';
 import 'position.dart';
+import 'telemetry_data.dart';
 
 /// Represents a parsed APRS packet (TNC2 format) with all basic elements.
 ///
@@ -54,6 +55,30 @@ class AprsPacket {
 
   /// Parsed message data.
   MessageData messageData = MessageData();
+
+  /// Telemetry data report (`T#`, spec §13). Populated only for
+  /// telemetry packets.
+  TelemetryReport? telemetryReport;
+
+  /// Telemetry parameter/unit/equation/bit-sense definition (spec
+  /// §13). Populated when a `:` message addressed to the telemetry
+  /// source carries `PARM.` / `UNIT.` / `EQNS.` / `BITS.` text. The
+  /// addressee field of the underlying message tells you which
+  /// callsign these definitions describe.
+  TelemetryDefinitions? telemetryDefinitions;
+
+  /// Object/Item entity name (spec §11). Object names are exactly 9
+  /// chars (right-padded with spaces); Item names are 3–9 chars
+  /// terminated by `!` (live) or `_` (killed). Trimmed on parse.
+  /// Empty when the packet is not an object or item.
+  String entityName = '';
+
+  /// True when an object (`;`) or item (`)`) is alive — flag char `*`
+  /// for objects, `!` for items. False when the flag char is `_`
+  /// (killed), which signals consumers to remove the entity from
+  /// their displays. Defaults to true; meaningless for non-object/
+  /// non-item packets.
+  bool entityAlive = true;
 
   AprsPacket._();
 
@@ -217,6 +242,15 @@ class AprsPacket {
       case PacketDataType.status:
         _parseStatus();
         break;
+      case PacketDataType.object:
+        _parseObject();
+        break;
+      case PacketDataType.item:
+        _parseItem();
+        break;
+      case PacketDataType.telemetry:
+        telemetryReport = TelemetryReport.parse(informationField);
+        break;
       case PacketDataType.micECurrent:
       case PacketDataType.micEOld:
       case PacketDataType.tmD700:
@@ -228,12 +262,9 @@ class AprsPacket {
       case PacketDataType.peetBrosUII1:
       case PacketDataType.peetBrosUII2:
       case PacketDataType.weatherReport:
-      case PacketDataType.object:
-      case PacketDataType.item:
       case PacketDataType.stationCapabilities:
       case PacketDataType.query:
       case PacketDataType.userDefined:
-      case PacketDataType.telemetry:
       case PacketDataType.invalidOrTestData:
       case PacketDataType.maidenheadGridLoc:
       case PacketDataType.rawGPSorU2K:
@@ -319,6 +350,15 @@ class AprsPacket {
 
     // Save text of message
     messageData.msgText = s;
+
+    // Spec §13: telemetry definitions (PARM/UNIT/EQNS/BITS) are
+    // delivered as messages addressed to the telemetry source. If
+    // this message carries one, expose the parsed definition so
+    // consumers can cache it per-addressee.
+    final defs = TelemetryDefinitions.tryParse(s);
+    if (defs != null && !defs.isEmpty) {
+      telemetryDefinitions = defs;
+    }
   }
 
   int _convertDest(int ch) {
@@ -626,6 +666,51 @@ class AprsPacket {
     // After parsing position and symbol from the information field
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
+  }
+
+  /// Object report (`;`) — spec §11.
+  ///
+  /// Format: 9-char fixed-width name + flag char (`*` live, `_`
+  /// killed) + 7-byte timestamp + position (compressed or
+  /// uncompressed) + optional comment. Reuses the timestamp and
+  /// position helpers used by position packets, so the resulting
+  /// `position`, `symbolTableIdentifier`, `symbolCode`, `comment`,
+  /// and `timeStamp` fields are populated identically.
+  void _parseObject() {
+    final s = informationField;
+    if (s.length < 17) return; // 9 name + 1 flag + 7 timestamp
+    entityName = s.substring(0, 9).trim();
+    final flag = s.codeUnitAt(9);
+    entityAlive = flag != 0x5F; // '_' = killed; '*' = live
+    _parseDateTime(s.substring(10, 17));
+    // After parsing position and symbol from the remaining info field
+    // all that can be left is a comment.
+    comment = _parsePositionAndSymbol(s.substring(17));
+  }
+
+  /// Item report (`)`) — spec §11.
+  ///
+  /// Format: 3–9 char variable-width name terminated by `!` (live) or
+  /// `_` (killed) + position (compressed or uncompressed) + optional
+  /// comment. No timestamp.
+  void _parseItem() {
+    final s = informationField;
+    if (s.length < 4) return;
+    // Find the terminator within the first 3..9 chars of the name.
+    // Names are 3-9 chars per spec, so terminator index ∈ [3, 9].
+    int? termIdx;
+    final maxIdx = s.length < 10 ? s.length : 10;
+    for (var i = 3; i < maxIdx; i++) {
+      final ch = s.codeUnitAt(i);
+      if (ch == 0x21 || ch == 0x5F) {
+        termIdx = i;
+        break;
+      }
+    }
+    if (termIdx == null) return; // malformed: no terminator
+    entityName = s.substring(0, termIdx).trim();
+    entityAlive = s.codeUnitAt(termIdx) != 0x5F;
+    comment = _parsePositionAndSymbol(s.substring(termIdx + 1));
   }
 
   /// Status report (`>`) — spec §16.

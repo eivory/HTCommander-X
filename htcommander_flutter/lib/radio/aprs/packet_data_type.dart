@@ -54,6 +54,8 @@ PacketDataType getDataType(int ch) {
       return PacketDataType.mapFeature;
     case 0x27: // '\''
       return PacketDataType.tmD700;
+    case 0x29: // ')'
+      return PacketDataType.item;
     case 0x2A: // '*'
       return PacketDataType.peetBrosUII2;
     case 0x2B: // '+'
