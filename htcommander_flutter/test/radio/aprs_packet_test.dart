@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:htcommander_flutter/radio/aprs/aprs_encoder.dart';
 import 'package:htcommander_flutter/radio/aprs/aprs_packet.dart';
 import 'package:htcommander_flutter/radio/aprs/message_data.dart';
 import 'package:htcommander_flutter/radio/aprs/packet_data_type.dart';
@@ -298,6 +299,88 @@ void main() {
     test('regular messages do not get a telemetryDefinitions', () {
       final pkt = AprsPacket.parse(':W1ABC    :Hello{42}', 'APRS-0');
       expect(pkt!.telemetryDefinitions, isNull);
+    });
+  });
+
+  group('Position encoder — spec §8', () {
+    test('encodes uncompressed position without messaging', () {
+      final wire = AprsEncoder.position(
+        latitude: 49.058333,
+        longitude: -72.029166,
+        symbolTable: '/',
+        symbolCode: '>',
+      );
+      // Format: ![lat 8][/][lon 9][>]
+      expect(wire.startsWith('!'), isTrue);
+      expect(wire[9], equals('/')); // symbol table at byte 9
+      expect(wire[19], equals('>')); // symbol code at byte 19
+      expect(wire.length, equals(20));
+    });
+
+    test('encodes uncompressed position with messaging', () {
+      final wire = AprsEncoder.position(
+        latitude: 49.058333,
+        longitude: -72.029166,
+        withMessaging: true,
+      );
+      expect(wire.startsWith('='), isTrue);
+    });
+
+    test('appends comment after symbol code', () {
+      final wire = AprsEncoder.position(
+        latitude: 0,
+        longitude: 0,
+        symbolTable: '/',
+        symbolCode: '-',
+        comment: 'Hello world',
+      );
+      expect(wire.endsWith('Hello world'), isTrue);
+    });
+
+    test('round-trips through the parser', () {
+      final wire = AprsEncoder.position(
+        latitude: 49.058333,
+        longitude: -72.029166,
+        symbolTable: '/',
+        symbolCode: '>',
+        comment: 'Test',
+      );
+      final pkt = AprsPacket.parse(wire, 'APRS-0');
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.position));
+      expect(pkt.symbolTableIdentifier, equals(0x2F)); // '/'
+      expect(pkt.symbolCode, equals(0x3E)); // '>'
+      expect(
+          pkt.position.coordinateSet.latitude.value, closeTo(49.058, 0.01));
+      expect(pkt.position.coordinateSet.longitude.value,
+          closeTo(-72.029, 0.01));
+      expect(pkt.comment, equals('Test'));
+    });
+  });
+
+  group('Status encoder — spec §16', () {
+    test('encodes status without timestamp', () {
+      expect(
+        AprsEncoder.status(text: 'QRV 146.520'),
+        equals('>QRV 146.520'),
+      );
+    });
+
+    test('encodes status with DDHHMMz UTC timestamp', () {
+      final ts = DateTime.utc(2026, 4, 9, 23, 45);
+      final wire = AprsEncoder.status(text: 'Net at 8pm', timestamp: ts);
+      expect(wire, equals('>092345zNet at 8pm'));
+    });
+
+    test('round-trips through the parser', () {
+      final ts = DateTime.utc(2026, 4, 9, 23, 45);
+      final wire = AprsEncoder.status(text: 'Net at 8pm', timestamp: ts);
+      final pkt = AprsPacket.parse(wire, 'APRS-0');
+      expect(pkt!.dataType, equals(PacketDataType.status));
+      expect(pkt.comment, equals('Net at 8pm'));
+      expect(pkt.timeStamp!.day, equals(9));
+      expect(pkt.timeStamp!.hour, equals(23));
+      expect(pkt.timeStamp!.minute, equals(45));
     });
   });
 }

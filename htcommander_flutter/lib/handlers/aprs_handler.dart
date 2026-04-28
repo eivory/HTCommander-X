@@ -2,6 +2,7 @@ import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../radio/ax25/ax25_address.dart';
 import '../radio/ax25/ax25_packet.dart';
+import '../radio/aprs/aprs_encoder.dart';
 import '../radio/aprs/aprs_packet.dart';
 import '../radio/aprs/message_data.dart';
 import '../radio/aprs/packet_data_type.dart';
@@ -20,6 +21,52 @@ class AprsSendMessageData {
     required this.message,
     required this.radioDeviceId,
     this.route,
+  });
+}
+
+/// Data class for APRS beacon (position/status) TX requests.
+///
+/// Dispatch to broker (1, 'SendAprsBeacon') with one of these to
+/// transmit a position or status report. Set [latitude] +
+/// [longitude] for a position; pass [statusText] to send a status
+/// report instead. If both are provided, the position wins.
+class AprsBeaconData {
+  final int radioDeviceId;
+  final List<String>? route;
+
+  /// Decimal degrees. When non-null, a position report is sent.
+  final double? latitude;
+  final double? longitude;
+
+  /// APRS symbol table (`/`, `\`, or overlay digit/letter) and code.
+  final String symbolTable;
+  final String symbolCode;
+
+  /// Trailing comment for position reports. Free-form, but spec
+  /// reserves leading bytes for course/speed/altitude extensions —
+  /// keep this user-readable.
+  final String comment;
+
+  /// True selects DTI `=` (position with messaging), false `!`.
+  final bool withMessaging;
+
+  /// Status text — when [latitude] is null, a status report (`>`)
+  /// is sent containing this text. When [statusTimestamp] is also
+  /// non-null, a 7-byte UTC timestamp prefix is included.
+  final String? statusText;
+  final DateTime? statusTimestamp;
+
+  const AprsBeaconData({
+    required this.radioDeviceId,
+    this.route,
+    this.latitude,
+    this.longitude,
+    this.symbolTable = '/',
+    this.symbolCode = '>',
+    this.comment = '',
+    this.withMessaging = false,
+    this.statusText,
+    this.statusTimestamp,
   });
 }
 
@@ -50,6 +97,7 @@ class AprsHandler {
 
     // Message sending from UI
     _broker.subscribe(1, 'SendAprsMessage', _onSendAprsMessage);
+    _broker.subscribe(1, 'SendAprsBeacon', _onSendAprsBeacon);
 
     // On-demand packet list requests
     _broker.subscribe(1, 'RequestAprsPackets', _onRequestAprsPackets);
@@ -290,6 +338,120 @@ class AprsHandler {
     );
 
     // Add to local history so it appears in UI immediately
+    final destCallsign = addresses.isNotEmpty ? addresses[0].toString() : '';
+    final aprs = AprsPacket.parse(aprsContent, destCallsign);
+    if (aprs != null) {
+      final entry = AprsEntry(
+        time: ax25Packet.time,
+        from: srcCallsignWithId,
+        to: destCallsign,
+        packet: aprs,
+        ax25Packet: ax25Packet,
+        incoming: false,
+      );
+      _entries.add(entry);
+      while (_entries.length > _maxEntries) {
+        _entries.removeAt(0);
+      }
+      _broker.dispatch(1, 'AprsEntry', entry, store: false);
+      _broker.dispatch(1, 'AprsStoreUpdated', _entries.length, store: false);
+    }
+  }
+
+  // ── Beacon (position / status) sending ──
+
+  /// Encode and transmit a position or status report. Caller
+  /// dispatches `(1, 'SendAprsBeacon', AprsBeaconData)` with the
+  /// payload they want; this method resolves callsign + APRS channel,
+  /// builds the AX.25 UI frame, and ships it.
+  void _onSendAprsBeacon(int deviceId, String name, Object? data) {
+    if (data is! AprsBeaconData) return;
+    final beacon = data;
+
+    final callsign = DataBroker.getValue<String>(0, 'CallSign', '');
+    final stationIdInt = DataBroker.getValue<int>(0, 'StationId', 0);
+    if (callsign.isEmpty) {
+      _broker.logError('Cannot send APRS beacon: Callsign not configured');
+      return;
+    }
+    final srcCallsignWithId =
+        stationIdInt > 0 ? '$callsign-$stationIdInt' : callsign;
+
+    String aprsContent;
+    if (beacon.latitude != null && beacon.longitude != null) {
+      aprsContent = AprsEncoder.position(
+        latitude: beacon.latitude!,
+        longitude: beacon.longitude!,
+        symbolTable: beacon.symbolTable,
+        symbolCode: beacon.symbolCode,
+        comment: beacon.comment,
+        withMessaging: beacon.withMessaging,
+      );
+    } else if (beacon.statusText != null) {
+      aprsContent = AprsEncoder.status(
+        text: beacon.statusText!,
+        timestamp: beacon.statusTimestamp,
+      );
+    } else {
+      _broker.logError(
+          'Cannot send APRS beacon: neither lat/lon nor status text supplied');
+      return;
+    }
+
+    final addresses = <AX25Address>[];
+    var destAddress = 'APRS';
+    if (beacon.route != null && beacon.route!.length >= 2) {
+      destAddress = beacon.route![1];
+    }
+    final destAddr = AX25Address.getAddress(destAddress);
+    if (destAddr != null) addresses.add(destAddr);
+    final srcAddr = AX25Address.getAddress(srcCallsignWithId);
+    if (srcAddr != null) addresses.add(srcAddr);
+    if (beacon.route != null && beacon.route!.length > 2) {
+      for (var i = 2; i < beacon.route!.length; i++) {
+        if (beacon.route![i].isNotEmpty) {
+          final pathAddr = AX25Address.getAddress(beacon.route![i]);
+          if (pathAddr != null) addresses.add(pathAddr);
+        }
+      }
+    }
+
+    final ax25Packet = AX25Packet.fromDataStr(
+      addresses: addresses,
+      dataStr: aprsContent,
+      time: DateTime.now(),
+    );
+    ax25Packet.type = FrameType.uFrameUI;
+    ax25Packet.pid = 240;
+    ax25Packet.command = true;
+    ax25Packet.incoming = false;
+    ax25Packet.sent = false;
+
+    final aprsChannelId = _getAprsChannelId(beacon.radioDeviceId);
+    if (aprsChannelId < 0) {
+      _broker.logError('Cannot send APRS beacon: No APRS channel found '
+          'on radio ${beacon.radioDeviceId}');
+      return;
+    }
+    ax25Packet.channelId = aprsChannelId;
+    ax25Packet.channelName = 'APRS';
+
+    final packetBytes = ax25Packet.toByteArray();
+    if (packetBytes == null) {
+      _broker.logError('Cannot send APRS beacon: AX.25 encode failed');
+      return;
+    }
+    _broker.dispatch(
+      beacon.radioDeviceId,
+      'TransmitDataFrame',
+      TransmitDataFrameData(
+        packetData: packetBytes,
+        channelId: aprsChannelId,
+      ),
+      store: false,
+    );
+
+    // Add to local history so it appears in UI immediately.
     final destCallsign = addresses.isNotEmpty ? addresses[0].toString() : '';
     final aprs = AprsPacket.parse(aprsContent, destCallsign);
     if (aprs != null) {
