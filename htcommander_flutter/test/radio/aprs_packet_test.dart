@@ -383,4 +383,85 @@ void main() {
       expect(pkt.timeStamp!.minute, equals(45));
     });
   });
+
+  group('Weather report (_) — spec §12', () {
+    test('parses positionless weather with full sensor suite', () {
+      // Spec example: _10090556c220s004g005t077r000p000P000h50b09900wRSW
+      final pkt = AprsPacket.parse(
+        '_10090556c220s004g005t077r000p000P000h50b09900wRSW',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.weatherReport));
+      expect(pkt.weather, isNotNull);
+      final w = pkt.weather!;
+      expect(w.windDirection, equals(220));
+      expect(w.windSpeed, equals(4));
+      expect(w.windGust, equals(5));
+      expect(w.temperatureF, equals(77));
+      expect(w.rainLastHourHundredths, equals(0));
+      expect(w.rain24hHundredths, equals(0));
+      expect(w.rainSinceMidnightHundredths, equals(0));
+      expect(w.humidityPercent, equals(50));
+      expect(w.pressureTenthsMbar, equals(9900));
+      // Timestamp in MDHM format: month=10, day=09, hour=05, min=56
+      expect(pkt.timeStamp!.month, equals(10));
+      expect(pkt.timeStamp!.day, equals(9));
+      expect(pkt.timeStamp!.hour, equals(5));
+      expect(pkt.timeStamp!.minute, equals(56));
+    });
+
+    test('humidity 00 maps to 100%', () {
+      final pkt = AprsPacket.parse(
+        '_10090556c220s004g005t077h00b09900',
+        'APRS-0',
+      );
+      expect(pkt!.weather!.humidityPercent, equals(100));
+    });
+
+    test('parses weather with negative temperature', () {
+      final pkt = AprsPacket.parse(
+        '_10090556c220s004g005t-05',
+        'APRS-0',
+      );
+      expect(pkt!.weather!.temperatureF, equals(-5));
+    });
+
+    test('handles unknown values expressed as dots', () {
+      final pkt = AprsPacket.parse(
+        '_10090556c...s...g...t077',
+        'APRS-0',
+      );
+      expect(pkt!.weather!.windDirection, isNull);
+      expect(pkt.weather!.windSpeed, isNull);
+      expect(pkt.weather!.windGust, isNull);
+      expect(pkt.weather!.temperatureF, equals(77));
+    });
+
+    test('parses weather embedded in position packet (symbol _)', () {
+      // Position with weather symbol (`_` symbol code) followed by
+      // the same weather fields format.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W_220/004g005t077r000p000P000h50b09900',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.position));
+      expect(pkt.symbolCode, equals(0x5F)); // '_'
+      expect(pkt.weather, isNotNull);
+      // After position parser strips the `220/004` course/speed
+      // extension, weather body starts at `g005...`.
+      expect(pkt.weather!.windGust, equals(5));
+      expect(pkt.weather!.temperatureF, equals(77));
+      expect(pkt.weather!.humidityPercent, equals(50));
+    });
+
+    test('non-weather position packets do not get a weather object', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>088/036',
+        'APRS-0',
+      );
+      expect(pkt!.weather, isNull);
+    });
+  });
 }

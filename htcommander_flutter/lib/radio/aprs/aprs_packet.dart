@@ -5,6 +5,7 @@ import 'message_data.dart';
 import 'packet_data_type.dart';
 import 'position.dart';
 import 'telemetry_data.dart';
+import 'weather_data.dart';
 
 /// Represents a parsed APRS packet (TNC2 format) with all basic elements.
 ///
@@ -55,6 +56,11 @@ class AprsPacket {
 
   /// Parsed message data.
   MessageData messageData = MessageData();
+
+  /// Parsed weather report (spec §12). Populated for positionless
+  /// weather (`_`) packets and for position packets whose symbol
+  /// code is `_` (the weather symbol).
+  WeatherReport? weather;
 
   /// Telemetry data report (`T#`, spec §13). Populated only for
   /// telemetry packets.
@@ -251,6 +257,9 @@ class AprsPacket {
       case PacketDataType.telemetry:
         telemetryReport = TelemetryReport.parse(informationField);
         break;
+      case PacketDataType.weatherReport:
+        _parseWeather();
+        break;
       case PacketDataType.micECurrent:
       case PacketDataType.micEOld:
       case PacketDataType.tmD700:
@@ -261,7 +270,6 @@ class AprsPacket {
       case PacketDataType.beacon:
       case PacketDataType.peetBrosUII1:
       case PacketDataType.peetBrosUII2:
-      case PacketDataType.weatherReport:
       case PacketDataType.stationCapabilities:
       case PacketDataType.query:
       case PacketDataType.userDefined:
@@ -539,6 +547,17 @@ class AprsPacket {
     // After parsing position and symbol from the information field
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(informationField);
+    _maybeParseWeatherInComment();
+  }
+
+  /// Spec §12 says the four position DTIs (`!`, `=`, `/`, `@`) may
+  /// also carry weather data — recognized by symbol code `_`. The
+  /// weather fields appear immediately after the position+symbol,
+  /// in [comment]. Parse them in place.
+  void _maybeParseWeatherInComment() {
+    if (symbolCode != 0x5F) return; // '_' weather symbol
+    final w = WeatherReport.parseBody(comment);
+    if (w != null && !w.isEmpty) weather = w;
   }
 
   String _parsePositionAndSymbol(String ps) {
@@ -666,6 +685,23 @@ class AprsPacket {
     // After parsing position and symbol from the information field
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
+    _maybeParseWeatherInComment();
+  }
+
+  /// Positionless weather report (`_`) — spec §12.
+  ///
+  /// Format: `_MMDDHHMM` 8-byte timestamp + weather data fields.
+  /// Reuses [_parseDateTime] which understands the `MDHM` form when
+  /// passed an 8-char numeric string.
+  void _parseWeather() {
+    if (informationField.length < 8) return;
+    _parseDateTime(informationField.substring(0, 8));
+    final body = informationField.substring(8);
+    weather = WeatherReport.parseBody(body);
+    // Spec doesn't define a separate comment for `_` packets, but
+    // any trailing free text we couldn't classify as weather fields
+    // is preserved in `weather` parsing or simply ignored. Leave
+    // [comment] empty to signal "no plain-text comment."
   }
 
   /// Object report (`;`) — spec §11.
