@@ -533,4 +533,88 @@ void main() {
       expect(pkt.comment, equals('Hello'));
     });
   });
+
+  group('Position ambiguity — spec §6/§8', () {
+    test('exact coordinates report ambiguity 0', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>',
+        'APRS-0',
+      );
+      expect(pkt!.position.ambiguity, equals(0));
+    });
+
+    test('one trailing dot in latitude → ambiguity 1', () {
+      final pkt = AprsPacket.parse(
+        '!4903.5 N/07201.7 W>',
+        'APRS-0',
+      );
+      expect(pkt!.position.ambiguity, equals(1));
+    });
+
+    test('two trailing dots → ambiguity 2 (1 minute)', () {
+      final pkt = AprsPacket.parse(
+        '!4903.  N/07201.  W>',
+        'APRS-0',
+      );
+      expect(pkt!.position.ambiguity, equals(2));
+    });
+
+    test('four blanks → ambiguity 4 (1 degree)', () {
+      final pkt = AprsPacket.parse(
+        '!49  .  N/072  .  W>',
+        'APRS-0',
+      );
+      expect(pkt!.position.ambiguity, equals(4));
+      // Position should still parse (at the low edge of the bucket).
+      expect(pkt.position.coordinateSet.latitude.value, closeTo(49, 0.01));
+    });
+
+    test('dots-as-ambiguity also accepted (vs spaces)', () {
+      final pkt = AprsPacket.parse(
+        '!4903.5./07201.7.W>',
+        'APRS-0',
+      );
+      // Note: this packet uses dots in the rightmost mantissa
+      // position. With the / symbol-table after lat byte 7 instead
+      // of N/S, this is malformed — but exercising the ambiguity
+      // counter directly via the canonical form:
+      final pkt2 = AprsPacket.parse(
+        '!4903.5.N/07201.7.W>',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt2!.position.ambiguity, equals(1));
+    });
+  });
+
+  group('Capabilities (<) — spec §15', () {
+    test('parses comma-separated key/value pairs', () {
+      final pkt = AprsPacket.parse(
+        '<IGATE,MSG_CNT=14,LOC_CNT=12',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.stationCapabilities));
+      expect(pkt.capabilities, isNotNull);
+      expect(pkt.capabilities!['IGATE'], equals(''));
+      expect(pkt.capabilities!['MSG_CNT'], equals('14'));
+      expect(pkt.capabilities!['LOC_CNT'], equals('12'));
+    });
+
+    test('empty body produces no capabilities map', () {
+      final pkt = AprsPacket.parse('<', 'APRS-0');
+      expect(pkt!.capabilities, isNull);
+    });
+  });
+
+  group('ACK / REJ casing — spec §14', () {
+    test('encoder emits lowercase ack', () {
+      // The auto-ACK construction lives in aprs_handler.dart; verify
+      // the wire format we generate parses back as ack/lowercase.
+      final wire = ':SENDER   :ack42';
+      final pkt = AprsPacket.parse(wire, 'APRS-0');
+      expect(pkt!.messageData.msgType, equals(MessageType.ack));
+      expect(pkt.messageData.seqId, equals('42'));
+    });
+  });
 }

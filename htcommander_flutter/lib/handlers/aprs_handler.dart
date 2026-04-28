@@ -82,6 +82,15 @@ class AprsHandler {
   String? _localCallsignWithId;
   int _nextAprsMessageId = 1;
 
+  /// Spec §14: when a duplicate inbound message arrives, a station
+  /// MAY re-ACK but consecutive ACKs to the same sender/seqId must be
+  /// separated by at least 30 seconds (digipeaters dedup within ~30s
+  /// so anything sent sooner is wasted air). Map of `sender|seqId`
+  /// to the timestamp of our last ACK; checked + pruned on each
+  /// auto-ACK.
+  static const Duration _ackRateLimit = Duration(seconds: 30);
+  final Map<String, DateTime> _recentAcks = {};
+
   List<AprsEntry> get entries => List.unmodifiable(_entries);
   int get count => _entries.length;
   bool get isStoreReady => _storeReady;
@@ -511,6 +520,19 @@ class AprsHandler {
 
     if (ax25Packet.addresses.length < 2) return;
     final senderCallsign = ax25Packet.addresses[1].toString();
+
+    // Spec §14: rate-limit duplicate ACKs to the same sender/seqId
+    // to no more than one per 30 seconds.
+    final ackKey = '${senderCallsign.toUpperCase()}|${msgData.seqId}';
+    final now = DateTime.now();
+    final lastAck = _recentAcks[ackKey];
+    if (lastAck != null && now.difference(lastAck) < _ackRateLimit) {
+      return;
+    }
+    _recentAcks[ackKey] = now;
+    // Prune anything older than the rate-limit window so the map
+    // doesn't grow unbounded across long sessions.
+    _recentAcks.removeWhere((_, ts) => now.difference(ts) >= _ackRateLimit);
 
     final aprsChannelId = _getAprsChannelId(radioDeviceId);
     if (aprsChannelId < 0) return;

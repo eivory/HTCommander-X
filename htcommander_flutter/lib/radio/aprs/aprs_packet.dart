@@ -63,6 +63,12 @@ class AprsPacket {
   /// code is `_` (the weather symbol).
   WeatherReport? weather;
 
+  /// Station capabilities (`<`) — spec §15. List of comma-separated
+  /// `key` or `key=value` advertisements (e.g. `IGATE`, `MSG_CNT=14`,
+  /// `LOC_CNT=12`). Empty when the packet isn't a capabilities
+  /// report.
+  Map<String, String>? capabilities;
+
   /// Parsed PHG (Power-Height-Gain-Directivity) extension after a
   /// position+symbol when present (spec §7). Carries the spec's
   /// derived values (watts, feet, dBi, beam direction) directly.
@@ -274,6 +280,9 @@ class AprsPacket {
       case PacketDataType.weatherReport:
         _parseWeather();
         break;
+      case PacketDataType.stationCapabilities:
+        _parseCapabilities();
+        break;
       case PacketDataType.micECurrent:
       case PacketDataType.micEOld:
       case PacketDataType.tmD700:
@@ -284,7 +293,6 @@ class AprsPacket {
       case PacketDataType.beacon:
       case PacketDataType.peetBrosUII1:
       case PacketDataType.peetBrosUII2:
-      case PacketDataType.stationCapabilities:
       case PacketDataType.query:
       case PacketDataType.userDefined:
       case PacketDataType.invalidOrTestData:
@@ -642,8 +650,20 @@ class AprsPacket {
         final sLon = pd.substring(9, 18);
         symbolCode = pd.codeUnitAt(18);
 
-        position.coordinateSet.latitude = Coordinate.fromNmea(sLat);
-        position.coordinateSet.longitude = Coordinate.fromNmea(sLon);
+        // Spec §6 position ambiguity: the four right-most digits of
+        // the latitude (mirrored in the longitude) may be replaced
+        // with dots or spaces to indicate progressively coarser
+        // precision (0=exact, 1=0.1', 2=1', 3=10', 4=1°). Detect by
+        // counting blanked digits in the latitude — longitude is
+        // required to match per spec, so latitude alone is enough.
+        position.ambiguity = _countAmbiguity(sLat);
+
+        // Coordinate.fromNmea uses double.tryParse, which fails on
+        // non-digit chars. Replace the ambiguous digits with '0' so
+        // the position parses to the low edge of its bucket; callers
+        // who care about uncertainty read position.ambiguity.
+        position.coordinateSet.latitude = Coordinate.fromNmea(_zeroAmbiguous(sLat));
+        position.coordinateSet.longitude = Coordinate.fromNmea(_zeroAmbiguous(sLon));
 
         // Check for valid lat/lon values
         if (position.coordinateSet.latitude.value < -90 ||
@@ -723,6 +743,28 @@ class AprsPacket {
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
     _maybeParseWeatherInComment();
+  }
+
+  /// Station capabilities (`<`) — spec §15.
+  ///
+  /// Body is a comma-separated list of advertisements; each item is
+  /// either a bare key (e.g. `IGATE`) or `key=value`. Stored as a
+  /// case-preserved map; bare keys map to an empty string.
+  void _parseCapabilities() {
+    final s = informationField;
+    if (s.isEmpty) return;
+    final out = <String, String>{};
+    for (final raw in s.split(',')) {
+      final part = raw.trim();
+      if (part.isEmpty) continue;
+      final eq = part.indexOf('=');
+      if (eq >= 0) {
+        out[part.substring(0, eq).trim()] = part.substring(eq + 1).trim();
+      } else {
+        out[part] = '';
+      }
+    }
+    if (out.isNotEmpty) capabilities = out;
   }
 
   /// Positionless weather report (`_`) — spec §12.
@@ -815,6 +857,58 @@ class AprsPacket {
   }
 
   static bool _isDigit(int ch) => ch >= 0x30 && ch <= 0x39;
+
+  /// Replace ambiguous digit slots (dot or space) in an uncompressed
+  /// lat/lon NMEA string with '0' so [Coordinate.fromNmea] can parse
+  /// the numeric portion. Preserves the decimal point and hemisphere
+  /// suffix.
+  static String _zeroAmbiguous(String nmea) {
+    final cu = nmea.codeUnits.toList();
+    for (var i = 0; i < cu.length; i++) {
+      // Skip the decimal point (always one of these positions) and
+      // the hemisphere suffix at the end.
+      if (i == cu.length - 1) continue;
+      final c = cu[i];
+      if (c == 0x20) cu[i] = 0x30; // space → '0'
+      // Don't blanket-replace '.' — preserve the canonical decimal
+      // point. Detect ambiguity dots by position instead: only the
+      // four mantissa digits (positions DDMM.MM in 8-char lat or
+      // DDDMM.MM in 9-char lon) can be ambiguity dots.
+    }
+    // Targeted replacement for dot-as-ambiguity at known positions.
+    // Lat (8 chars): digit indices 2,3,5,6.
+    // Lon (9 chars): digit indices 3,4,6,7.
+    final isLon = nmea.length == 9;
+    final digitIdx = isLon ? const [3, 4, 6, 7] : const [2, 3, 5, 6];
+    for (final i in digitIdx) {
+      if (i < cu.length && cu[i] == 0x2E) cu[i] = 0x30;
+    }
+    return String.fromCharCodes(cu);
+  }
+
+  /// Count ambiguity level in an uncompressed latitude string
+  /// (`DDMM.MMN`). Spec §6: dots or spaces replace the four
+  /// right-most digits (positions 6, 5, 3, 2 — skipping the
+  /// decimal point at position 4 and the hemisphere at 7) from
+  /// least-significant to most. Returns 0..4.
+  static int _countAmbiguity(String latNmea) {
+    if (latNmea.length < 7) return 0;
+    // Examine in spec order: 0.01 min (idx 6), 0.1 min (idx 5),
+    // skip dot at 4, 1 min (idx 3), 10 min (idx 2). Stop counting
+    // as soon as we hit a digit — ambiguity is contiguous from the
+    // least-significant end.
+    const order = [6, 5, 3, 2];
+    var amb = 0;
+    for (final i in order) {
+      final ch = latNmea.codeUnitAt(i);
+      if (ch == 0x2E || ch == 0x20) {
+        amb++;
+      } else {
+        break;
+      }
+    }
+    return amb;
+  }
 
   @override
   String toString() {
