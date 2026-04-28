@@ -464,4 +464,73 @@ void main() {
       expect(pkt!.weather, isNull);
     });
   });
+
+  group('Data extensions PHG / RNG / DFS — spec §7', () {
+    test('parses PHG5132 (spec example)', () {
+      // Spec example: 25W, 20ft, 3 dBi, due east beam.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>PHG5132',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.phg, isNotNull);
+      expect(pkt.phg!.powerWatts, equals(25));
+      expect(pkt.phg!.heightFeet, equals(20));
+      expect(pkt.phg!.gainDbi, equals(3));
+      expect(pkt.phg!.directivityDegrees, equals(90));
+      expect(pkt.phg!.beaconsPerHour, isNull);
+    });
+
+    test('omni PHG (directivity 0) reports null direction', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>PHG3360',
+        'APRS-0',
+      );
+      expect(pkt!.phg!.powerWatts, equals(9));
+      expect(pkt.phg!.directivityDegrees, isNull);
+    });
+
+    test('PHGR variant carries beacons-per-hour', () {
+      // PHG72604/ — 49W, 40ft, 6 dBi, omni, 4 beacons/hour.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>PHG72604/',
+        'APRS-0',
+      );
+      expect(pkt!.phg!.powerWatts, equals(49));
+      expect(pkt.phg!.heightFeet, equals(40));
+      expect(pkt.phg!.gainDbi, equals(6));
+      expect(pkt.phg!.directivityDegrees, isNull);
+      expect(pkt.phg!.beaconsPerHour, equals(4));
+    });
+
+    test('parses RNG0050', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>RNG0050',
+        'APRS-0',
+      );
+      expect(pkt!.rangeMiles, equals(50));
+    });
+
+    test('parses DFSshgd', () {
+      // DFS3132: signal=3, height=20, gain=3, beam=east.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>DFS3132',
+        'APRS-0',
+      );
+      expect(pkt!.dfs, isNotNull);
+      expect(pkt.dfs!.signalStrength, equals(3));
+      expect(pkt.dfs!.heightFeet, equals(20));
+      expect(pkt.dfs!.gainDbi, equals(3));
+      expect(pkt.dfs!.directivityDegrees, equals(90));
+    });
+
+    test('extension strips before comment', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>PHG5132Hello',
+        'APRS-0',
+      );
+      expect(pkt!.phg, isNotNull);
+      expect(pkt.comment, equals('Hello'));
+    });
+  });
 }

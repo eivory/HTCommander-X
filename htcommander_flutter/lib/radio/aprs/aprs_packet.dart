@@ -1,6 +1,7 @@
 import 'aprs_util.dart';
 import 'callsign.dart';
 import 'coordinate_set.dart';
+import 'data_extension.dart';
 import 'message_data.dart';
 import 'packet_data_type.dart';
 import 'position.dart';
@@ -61,6 +62,19 @@ class AprsPacket {
   /// weather (`_`) packets and for position packets whose symbol
   /// code is `_` (the weather symbol).
   WeatherReport? weather;
+
+  /// Parsed PHG (Power-Height-Gain-Directivity) extension after a
+  /// position+symbol when present (spec §7). Carries the spec's
+  /// derived values (watts, feet, dBi, beam direction) directly.
+  PhgData? phg;
+
+  /// Pre-calculated omni radio range in miles, if a `RNGxxxx`
+  /// extension was present after position+symbol (spec §7).
+  int? rangeMiles;
+
+  /// Parsed DFS (Omni-DF Signal Strength + Height/Gain/Directivity)
+  /// extension after a position+symbol when present (spec §7).
+  DfsData? dfs;
 
   /// Telemetry data report (`T#`, spec §13). Populated only for
   /// telemetry packets.
@@ -671,10 +685,33 @@ class AprsPacket {
           ps = ps.substring(9);
         }
       }
+      ps = _parseDataExtensions(ps);
       return ps;
     } catch (_) {
       return informationField;
     }
+  }
+
+  /// Strip a single PHG / RNG / DFS data extension off the front of
+  /// [ps] and populate the matching field on this packet. Spec §7.
+  /// Only one of these can appear; whichever matches first wins.
+  String _parseDataExtensions(String ps) {
+    final phgMatch = PhgData.tryParse(ps);
+    if (phgMatch != null) {
+      phg = phgMatch.$1;
+      return ps.substring(phgMatch.$2);
+    }
+    final rngMatch = RngData.tryParse(ps);
+    if (rngMatch != null) {
+      rangeMiles = rngMatch.$1.rangeMiles;
+      return ps.substring(rngMatch.$2);
+    }
+    final dfsMatch = DfsData.tryParse(ps);
+    if (dfsMatch != null) {
+      dfs = dfsMatch.$1;
+      return ps.substring(dfsMatch.$2);
+    }
+    return ps;
   }
 
   void _parsePositionTime() {
