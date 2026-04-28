@@ -63,6 +63,26 @@ class AprsPacket {
   /// code is `_` (the weather symbol).
   WeatherReport? weather;
 
+  /// DF report Bearing/NRQ extension (8 bytes after CSE/SPD on
+  /// direction-finding packets; spec §7).
+  BearingNrqData? bearingNrq;
+
+  /// Raw GPS NMEA sentence captured from a `$` packet (spec §5).
+  /// We don't deep-parse the sentence — consumers that care about
+  /// the data can re-tokenize per NMEA 0183 conventions. Captured
+  /// verbatim for downstream display + logging.
+  String? rawGpsSentence;
+
+  /// Query type from a `?` packet (spec §15) — uppercase, no
+  /// brackets (e.g. `APRS`, `IGATE`, `WX`, `MSGS`). Empty when the
+  /// packet isn't a query or didn't have a recognized payload.
+  String? queryType;
+
+  /// Optional callsign target on a directed query (text after the
+  /// query type and a space, e.g. `?APRS? W1ABC`). Null on undirected
+  /// queries.
+  String? queryTarget;
+
   /// Station capabilities (`<`) — spec §15. List of comma-separated
   /// `key` or `key=value` advertisements (e.g. `IGATE`, `MSG_CNT=14`,
   /// `LOC_CNT=12`). Empty when the packet isn't a capabilities
@@ -283,6 +303,12 @@ class AprsPacket {
       case PacketDataType.stationCapabilities:
         _parseCapabilities();
         break;
+      case PacketDataType.query:
+        _parseQuery();
+        break;
+      case PacketDataType.rawGPSorU2K:
+        _parseRawGps();
+        break;
       case PacketDataType.micECurrent:
       case PacketDataType.micEOld:
       case PacketDataType.tmD700:
@@ -293,11 +319,9 @@ class AprsPacket {
       case PacketDataType.beacon:
       case PacketDataType.peetBrosUII1:
       case PacketDataType.peetBrosUII2:
-      case PacketDataType.query:
       case PacketDataType.userDefined:
       case PacketDataType.invalidOrTestData:
       case PacketDataType.maidenheadGridLoc:
-      case PacketDataType.rawGPSorU2K:
       case PacketDataType.thirdParty:
       case PacketDataType.microFinder:
       case PacketDataType.mapFeature:
@@ -688,6 +712,13 @@ class AprsPacket {
           position.course = int.parse(ps.substring(0, 3));
           position.speed = int.parse(ps.substring(4, 7));
           ps = ps.substring(7);
+          // Spec §7: DF reports may follow CSE/SPD with an 8-byte
+          // /BRG/NRQ extension.
+          final brgMatch = BearingNrqData.tryParse(ps);
+          if (brgMatch != null) {
+            bearingNrq = brgMatch.$1;
+            ps = ps.substring(brgMatch.$2);
+          }
         }
 
         // Look for altitude
@@ -743,6 +774,42 @@ class AprsPacket {
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
     _maybeParseWeatherInComment();
+  }
+
+  /// Query packet (`?`) — spec §15.
+  ///
+  /// Body forms:
+  ///   `APRS?` — bare query
+  ///   `APRS? W1ABC` — query directed at one station
+  ///   `IGATE?`, `WX?`, `MSGS?`, etc.
+  ///
+  /// Trailing `?` is the convention; it's the part of the body that
+  /// comes after the data type identifier `?`. We split on the first
+  /// `?` to extract the type, and any whitespace-prefixed callsign
+  /// after that becomes [queryTarget].
+  void _parseQuery() {
+    final s = informationField;
+    if (s.isEmpty) return;
+    final qmark = s.indexOf('?');
+    if (qmark < 0) {
+      // No closing '?' — treat the whole body as the type.
+      queryType = s.trim().toUpperCase();
+      return;
+    }
+    queryType = s.substring(0, qmark).trim().toUpperCase();
+    final rest = s.substring(qmark + 1).trim();
+    if (rest.isNotEmpty) queryTarget = rest;
+  }
+
+  /// Raw GPS NMEA passthrough (`$`) — spec §5.
+  ///
+  /// We don't deep-parse the sentence; capture it verbatim and let
+  /// downstream consumers tokenize per NMEA 0183 if they care. This
+  /// also handles the legacy Ultimeter 2000 format which begins
+  /// `$ULTW`.
+  void _parseRawGps() {
+    if (informationField.isEmpty) return;
+    rawGpsSentence = informationField;
   }
 
   /// Station capabilities (`<`) — spec §15.

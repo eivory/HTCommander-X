@@ -617,4 +617,80 @@ void main() {
       expect(pkt.messageData.seqId, equals('42'));
     });
   });
+
+  group('DF Bearing/NRQ — spec §7', () {
+    test('parses /BRG/NRQ after CSE/SPD (spec example)', () {
+      // Spec example: 088/036/270/729 — course 88, speed 36,
+      // bearing 270, NRQ N=7 R=2 Q=9.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>088/036/270/729',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.position.course, equals(88));
+      expect(pkt.position.speed, equals(36));
+      expect(pkt.bearingNrq, isNotNull);
+      expect(pkt.bearingNrq!.bearingDegrees, equals(270));
+      expect(pkt.bearingNrq!.hits, equals(7));
+      expect(pkt.bearingNrq!.rangeCode, equals(2));
+      expect(pkt.bearingNrq!.quality, equals(9));
+    });
+
+    test('non-DF position packets do not get BearingNrq', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>088/036',
+        'APRS-0',
+      );
+      expect(pkt!.bearingNrq, isNull);
+    });
+  });
+
+  group('Raw GPS (\$) — spec §5', () {
+    test('captures NMEA sentence verbatim', () {
+      final pkt = AprsPacket.parse(
+        r'$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.rawGPSorU2K));
+      expect(pkt.rawGpsSentence,
+          startsWith('GPGGA,123519,4807.038,N,01131.000,E'));
+    });
+
+    test('captures Ultimeter 2000 raw weather verbatim', () {
+      final pkt = AprsPacket.parse(
+        r'$ULTW0031003702CE0069----000086A00001----011901CC00000005',
+        'APRS-0',
+      );
+      expect(pkt!.rawGpsSentence, startsWith('ULTW'));
+    });
+  });
+
+  group('Query packets (?) — spec §15', () {
+    test('parses bare ?APRS?', () {
+      final pkt = AprsPacket.parse('?APRS?', 'APRS-0');
+      expect(pkt, isNotNull);
+      expect(pkt!.dataType, equals(PacketDataType.query));
+      expect(pkt.queryType, equals('APRS'));
+      expect(pkt.queryTarget, isNull);
+    });
+
+    test('parses ?IGATE?', () {
+      final pkt = AprsPacket.parse('?IGATE?', 'APRS-0');
+      expect(pkt!.queryType, equals('IGATE'));
+    });
+
+    test('parses directed query with target', () {
+      final pkt = AprsPacket.parse('?APRS? W1ABC', 'APRS-0');
+      expect(pkt!.queryType, equals('APRS'));
+      expect(pkt.queryTarget, equals('W1ABC'));
+    });
+
+    test('parses ?WX? and ?MSGS?', () {
+      final wx = AprsPacket.parse('?WX?', 'APRS-0');
+      expect(wx!.queryType, equals('WX'));
+      final msgs = AprsPacket.parse('?MSGS?', 'APRS-0');
+      expect(msgs!.queryType, equals('MSGS'));
+    });
+  });
 }

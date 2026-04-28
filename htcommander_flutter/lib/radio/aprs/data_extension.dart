@@ -109,6 +109,63 @@ class RngData {
   }
 }
 
+/// `/BRG/NRQ` — DF report extension that follows CSE/SPD on direction-
+/// finding packets (spec §7). Bearing in degrees + NRQ = Number,
+/// Range, Quality. The CSE/SPD itself is parsed separately into
+/// `position.course` and `position.speed` by the existing parser.
+class BearingNrqData {
+  /// Beam bearing in compass degrees (0..359).
+  final int bearingDegrees;
+
+  /// Number of hits per period, 1..8 = relative coverage (8 = 100%),
+  /// 9 = manual report. 0 means the NRQ value is meaningless per
+  /// spec; we still capture it as 0 for completeness.
+  final int hits;
+
+  /// Range as a power of 2 in miles: actual range = 2^R. So R=4 →
+  /// 16 mile range. Stored as the raw R digit.
+  final int rangeCode;
+
+  /// Quality digit 0..9. Higher is more accurate. 9 = <1° beamwidth,
+  /// 0 = useless.
+  final int quality;
+
+  const BearingNrqData({
+    required this.bearingDegrees,
+    required this.hits,
+    required this.rangeCode,
+    required this.quality,
+  });
+
+  /// Try to parse `/BRG/NRQ` (8 chars) at the start of [s]. Caller
+  /// should already have consumed the preceding 7-byte CSE/SPD.
+  static (BearingNrqData, int)? tryParse(String s) {
+    if (s.length < 8) return null;
+    if (s.codeUnitAt(0) != 0x2F || s.codeUnitAt(4) != 0x2F) return null;
+    final brg = int.tryParse(s.substring(1, 4));
+    if (brg == null) return null;
+    final nrq = s.substring(5, 8);
+    final n = _digitVal(nrq.codeUnitAt(0));
+    final r = _digitVal(nrq.codeUnitAt(1));
+    final q = _digitVal(nrq.codeUnitAt(2));
+    if (n == null || r == null || q == null) return null;
+    return (
+      BearingNrqData(
+        bearingDegrees: brg,
+        hits: n,
+        rangeCode: r,
+        quality: q,
+      ),
+      8,
+    );
+  }
+
+  static int? _digitVal(int ch) {
+    if (ch >= 0x30 && ch <= 0x39) return ch - 0x30;
+    return null;
+  }
+}
+
 /// DFSshgd — Omni-DF signal strength + effective antenna
 /// height/gain/directivity. Spec §7. Same shape as PHG except the
 /// `p` (power) field is replaced with `s` (signal strength 0-9).
