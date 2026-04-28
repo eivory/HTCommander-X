@@ -214,6 +214,9 @@ class AprsPacket {
       case PacketDataType.message:
         _parseMessage(informationField);
         break;
+      case PacketDataType.status:
+        _parseStatus();
+        break;
       case PacketDataType.micECurrent:
       case PacketDataType.micEOld:
       case PacketDataType.tmD700:
@@ -222,7 +225,6 @@ class AprsPacket {
         break;
       // Not implemented - do nothing
       case PacketDataType.beacon:
-      case PacketDataType.status:
       case PacketDataType.peetBrosUII1:
       case PacketDataType.peetBrosUII2:
       case PacketDataType.weatherReport:
@@ -260,37 +262,35 @@ class AprsPacket {
 
     s = s.substring(10);
 
-    // Look for ack and reject messages
+    // Look for ack and reject messages. Spec §14 lowercase per
+    // example, but accept any case — it's free text we control on TX.
     if (s.length > 3) {
-      if (s.substring(0, 3).toUpperCase() == 'ACK') {
-        final i = s.lastIndexOf('}');
-        if (i >= 0) {
-          authCode = s.substring(i + 1);
-          s = s.substring(0, i - 1);
-        }
-        messageData.msgType = MessageType.ack;
-        messageData.seqId = s.substring(3).trim();
-        messageData.msgText = '';
-        return;
-      }
-      if (s.substring(0, 3).toUpperCase() == 'REJ') {
-        final i = s.lastIndexOf('}');
-        if (i >= 0) {
-          authCode = s.substring(i + 1);
-          s = s.substring(0, i - 1);
-        }
-        messageData.msgType = MessageType.rej;
+      final head = s.substring(0, 3).toLowerCase();
+      if (head == 'ack' || head == 'rej') {
+        messageData.msgType =
+            head == 'ack' ? MessageType.ack : MessageType.rej;
         messageData.seqId = s.substring(3).trim();
         messageData.msgText = '';
         return;
       }
     }
 
-    // Save sequence number if any
+    // Save sequence number if any. Spec §14 REPLY-ACK extension
+    // (Dec 1999): the line number after `{` may be `MM}AA` where MM
+    // is this message's seqId and AA is a free-ACK for one of the
+    // peer's outstanding outgoing messages. The `}` alone (no AA)
+    // signals REPLY-ACK capability.
     final idx = s.lastIndexOf('{');
     if (idx >= 0) {
-      messageData.seqId = s.substring(idx + 1);
-      s = s.substring(0, s.length - messageData.seqId.length - 1);
+      var rawId = s.substring(idx + 1);
+      s = s.substring(0, idx);
+      final braceIdx = rawId.indexOf('}');
+      if (braceIdx >= 0) {
+        messageData.replyAckCapable = true;
+        messageData.replyAck = rawId.substring(braceIdx + 1).trim();
+        rawId = rawId.substring(0, braceIdx);
+      }
+      messageData.seqId = rawId.trim();
     }
 
     // Assume standard message
@@ -626,6 +626,34 @@ class AprsPacket {
     // After parsing position and symbol from the information field
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
+  }
+
+  /// Status report (`>`) — spec §16.
+  ///
+  /// Format: optional 7-byte timestamp (`DDHHMMz` or `HHMMSSh`) followed
+  /// by free-form text up to 62 chars (no timestamp) or 55 chars (with).
+  /// We use the existing [_parseDateTime] helper, but only consume the
+  /// 7-byte prefix when it has a recognized terminator (`z`, `/`, `h`)
+  /// — otherwise the prefix is just text.
+  void _parseStatus() {
+    var s = informationField;
+    if (s.isEmpty) return;
+    if (s.length >= 7) {
+      final tsCh = s.codeUnitAt(6);
+      // 'z', '/', or 'h' marks a timestamp prefix. Anything else means
+      // the whole field is comment text (timestamp is optional).
+      if (tsCh == 0x7A || tsCh == 0x2F || tsCh == 0x68) {
+        final saved = timeStamp;
+        _parseDateTime(s.substring(0, 7));
+        if (timeStamp != null) {
+          s = s.substring(7);
+        } else {
+          // Fake terminator in the comment — keep the whole field.
+          timeStamp = saved;
+        }
+      }
+    }
+    comment = s;
   }
 
   static bool _isDigit(int ch) => ch >= 0x30 && ch <= 0x39;

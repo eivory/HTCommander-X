@@ -129,6 +129,24 @@ class AprsHandler {
     _broker.dispatch(1, 'AprsEntry', entry, store: false);
     _broker.dispatch(1, 'AprsStoreUpdated', _entries.length, store: false);
 
+    // Spec §14 REPLY-ACK extension: a peer's outgoing message may
+    // carry `{MM}AA` where `AA` acks one of *our* prior outgoing
+    // messages. Surface it as an AprsReplyAckReceived event so a
+    // future outbox tracker can mark the matching seqId as ACK'd.
+    if (aprs.dataType == PacketDataType.message &&
+        aprs.messageData.replyAck.isNotEmpty) {
+      _broker.dispatch(
+        1,
+        'AprsReplyAckReceived',
+        AprsReplyAckEvent(
+          fromCallsign:
+              ax25.addresses.length > 1 ? ax25.addresses[1].toString() : '',
+          ackedSeqId: aprs.messageData.replyAck,
+        ),
+        store: false,
+      );
+    }
+
     // Auto-ACK if message is addressed to us
     _sendAckIfNeeded(aprs, ax25, deviceId);
   }
@@ -196,10 +214,13 @@ class AprsHandler {
     final srcCallsignWithId =
         stationIdInt > 0 ? '$callsign-$stationIdInt' : callsign;
 
-    // Build APRS message content
+    // Build APRS message content. Spec §14 REPLY-ACK extension: emit
+    // `{MM}` (with the closing brace) so peers know we accept free-ACK
+    // replies, even when no AA is currently piggy-backed. Backwards-
+    // compatible — old clients ignore the trailing `}`.
     final msgId = _getNextAprsMessageId();
     final paddedDest = messageData.destination.padRight(9);
-    final aprsContent = ':$paddedDest:${messageData.message}{$msgId';
+    final aprsContent = ':$paddedDest:${messageData.message}{$msgId}';
 
     // Build address list
     final addresses = <AX25Address>[];
@@ -414,6 +435,19 @@ class AprsHandler {
 }
 
 /// A stored APRS entry with metadata.
+/// Dispatched on device 1 as `AprsReplyAckReceived` when an inbound
+/// APRS message carries a REPLY-ACK suffix (`{MM}AA`). Future outbox
+/// trackers can listen for this and mark our outgoing message with
+/// the matching seqId as acknowledged by [fromCallsign].
+class AprsReplyAckEvent {
+  final String fromCallsign;
+  final String ackedSeqId;
+  const AprsReplyAckEvent({
+    required this.fromCallsign,
+    required this.ackedSeqId,
+  });
+}
+
 class AprsEntry {
   final DateTime time;
   final String from;

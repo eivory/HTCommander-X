@@ -19,6 +19,7 @@ import '../radio/models/radio_channel_info.dart';
 import '../radio/models/radio_position.dart';
 import '../radio/sstv/sstv_encoder.dart';
 import '../widgets/glass_card.dart';
+import '../widgets/group_selector.dart';
 import '../widgets/vfo_display.dart';
 import '../widgets/signal_bars.dart';
 import '../widgets/radio_status_card.dart';
@@ -46,6 +47,8 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   bool _isConnected = false;
   String? _deviceName;
   int _rssi = 0;
+  /// 0-based active radio region (channel bank). -1 = unknown.
+  int _currRegion = -1;
   bool _isTransmitting = false;
   int _batteryPercent = 0;
   bool _isGpsLocked = false;
@@ -137,6 +140,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     if (htStatus is RadioHtStatus) {
       _rssi = htStatus.rssi;
       _isTransmitting = htStatus.isInTx;
+      _currRegion = htStatus.currRegion;
     }
 
     final settings = _broker.getValueDynamic(100, 'Settings');
@@ -221,6 +225,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     setState(() {
       _rssi = data.rssi;
       _isTransmitting = data.isInTx;
+      _currRegion = data.currRegion;
     });
   }
 
@@ -428,9 +433,19 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     if (_channels.isEmpty || _settings == null) return;
     final result = await showDialog<ChannelPickerResult>(
       context: context,
-      builder: (_) => ChannelPickerDialog(
-        channels: _channels,
-        title: isVfoA ? 'Select VFO A Channel' : 'Select VFO B Channel',
+      // Right-anchored picker — visually closer to the VFO it's
+      // selecting for, and frees the left side of the app behind it.
+      builder: (_) => Align(
+        alignment: Alignment.centerRight,
+        child: Padding(
+          padding: const EdgeInsets.only(right: 24),
+          child: ChannelPickerDialog(
+            channels: _channels,
+            title: isVfoA ? 'VFO A Channel' : 'VFO B Channel',
+            isVfoA: isVfoA,
+            onGroupChange: _onGroupChange,
+          ),
+        ),
       ),
     );
     if (result == null) return;
@@ -439,6 +454,23 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     if (result.pickIndex != null) {
       final s = _settings!;
       final picked = result.pickIndex!;
+      // VFO sentinels (0xFC = A, 0xFB = B) get the convert-from-current-
+      // channel treatment: if the slot is currently on a saved channel,
+      // copy that channel's parameters into the sentinel before
+      // pointing the slot at it. Otherwise the sentinel keeps whatever
+      // freq it already had (the radio remembers vfoAInfo / vfoBInfo
+      // across power cycles).
+      if (picked == 0xFC || picked == 0xFB) {
+        final activeId = isVfoA ? s.channelA : s.channelB;
+        if (activeId >= 0 && activeId < _channels.length) {
+          final src = _channels[activeId];
+          if (src != null) {
+            final copy = RadioChannelInfo.copy(src);
+            copy.channelId = picked;
+            radio.setChannel(copy);
+          }
+        }
+      }
       radio.writeSettings(s.toByteArrayWithChannels(
         isVfoA ? picked : s.channelA,
         isVfoA ? s.channelB : picked,
@@ -450,7 +482,9 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
   }
 
   /// Open the channel editor for a channel slot and, on save, write it
-  /// back to the radio.
+  /// back to the radio. Saved channel slots prompt for confirmation
+  /// before overwriting — losing a labeled memory is the kind of
+  /// mistake that hurts.
   Future<void> _editChannelSlot(int channelIndex) async {
     if (channelIndex < 0 || channelIndex >= _channels.length) return;
     final current = _channels[channelIndex];
@@ -461,8 +495,58 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     );
     if (edited == null) return;
     edited.channelId = current.channelId;
+    if (!await _confirmOverwriteSavedChannel(current)) return;
     final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
     radio?.setChannel(edited);
+  }
+
+  /// Confirm before overwriting a saved channel slot. Returns true if
+  /// the channel is a sentinel (0xFB/0xFC) — those are scratch VFO
+  /// slots and don't need confirmation.
+  Future<bool> _confirmOverwriteSavedChannel(RadioChannelInfo current) async {
+    if (current.channelId == 0xFC || current.channelId == 0xFB) return true;
+    final colors = Theme.of(context).colorScheme;
+    final label = current.nameStr.isNotEmpty
+        ? '"${current.nameStr}" (channel ${current.channelId})'
+        : 'channel ${current.channelId}';
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: colors.surfaceContainerHigh,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8)),
+        title: const Text('Overwrite saved channel?',
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+        content: Text(
+          'You are about to overwrite $label on the radio. This '
+          'replaces the saved memory slot.',
+          style: const TextStyle(fontSize: 12),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('CANCEL'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: colors.error,
+              foregroundColor: colors.onError,
+            ),
+            child: const Text('OVERWRITE'),
+          ),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Switch the radio's active channel group (region). The radio
+  /// re-reads its 30 channels for the new group; the broker pushes
+  /// the fresh list and the UI updates automatically.
+  void _onGroupChange(int region) {
+    final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
+    radio?.setRegion(region);
   }
 
   /// Make [isVfoA] the active TX/RX VFO. Writes settings with
@@ -504,6 +588,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
     // Preserve the channelId — the editor dialog copies from the source
     // but we want to make sure we overwrite the same slot.
     edited.channelId = current.channelId;
+    if (!await _confirmOverwriteSavedChannel(current)) return;
 
     final radio = DataBroker.getDataHandlerTyped<ht.Radio>('Radio_100');
     radio?.setChannel(edited);
@@ -601,7 +686,7 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
             ),
             const SizedBox(height: 14),
 
-            // Frequency Matrix title
+            // Frequency Matrix title + active channel-group label
             Row(
               children: [
                 Text(
@@ -613,9 +698,27 @@ class _CommunicationScreenState extends State<CommunicationScreen> {
                     letterSpacing: 1.5,
                   ),
                 ),
+                const Spacer(),
+                Text(
+                  _currRegion >= 0
+                      ? 'GROUP ${_currRegion + 1}'
+                      : 'GROUP –',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1.2,
+                    color: colors.primary,
+                  ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
+            GroupSelector(
+              activeRegion: _currRegion,
+              enabled: _isConnected,
+              onChanged: _onGroupChange,
+            ),
+            const SizedBox(height: 10),
 
             // VFO A — "active" means the radio is TX/RX'ing on it.
             // settings.doubleChannel: 1 = A, 2 = B (0 = both).
