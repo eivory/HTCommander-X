@@ -560,6 +560,9 @@ class Radio {
 
   void _handleReadRfChannel(Uint8List value) {
     final c = RadioChannelInfo.fromBytes(value);
+    debug('readRfCh ch=${c.channelId} mute=${c.mute} scan=${c.scan} '
+        'txDisable=${c.txDisable} '
+        'raw=${BinaryUtils.bytesToHex(value)}');
     if (c.channelId == 0xFC) {
       vfoAInfo = c;
       _broker.dispatch(deviceId, 'VfoAInfo', c);
@@ -863,7 +866,16 @@ class Radio {
   }
 
   void setChannel(RadioChannelInfo channel) {
-    _sendCommand(_CommandGroup.basic, _BasicCmd.writeRfCh, body: channel.toByteArray());
+    final body = channel.toByteArray();
+    // Diagnostic: log the bytes about to go to the radio so we can
+    // verify per-flag bit positions (notably mute, byte 14 mask 0x10)
+    // when the radio's behavior doesn't match the toggle. The full
+    // body is logged hex-formatted; pair this with the readRfCh
+    // response in the debug log to confirm round-trip.
+    debug('writeRfCh ch=${channel.channelId} mute=${channel.mute} '
+        'scan=${channel.scan} txDisable=${channel.txDisable} '
+        'body=${BinaryUtils.bytesToHex(body)}');
+    _sendCommand(_CommandGroup.basic, _BasicCmd.writeRfCh, body: body);
   }
 
   void setRegion(int region) {

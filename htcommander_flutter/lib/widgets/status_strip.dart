@@ -23,8 +23,12 @@ class StatusStrip extends StatelessWidget {
       color: colors.surfaceContainerLow,
       child: Row(
         children: [
+          // The flag here is "BT link to radio is up" — it does NOT
+          // mean we are receiving anything over the air. Past wording
+          // ("RX LINK STABLE") implied the latter and was misleading
+          // on the APRS pane in particular.
           _StatusLabel(
-            text: isConnected ? 'RX LINK STABLE' : 'OFFLINE',
+            text: isConnected ? 'RADIO ONLINE' : 'OFFLINE',
             color: isConnected ? colors.tertiary : colors.error,
           ),
           _separator(colors),
