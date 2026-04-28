@@ -693,4 +693,60 @@ void main() {
       expect(msgs!.queryType, equals('MSGS'));
     });
   });
+
+  group('Base91 comment telemetry — spec §13', () {
+    test('parses |ss11| (seq + 1 channel) embedded in comment', () {
+      // Spec example: 'ss' = seq 7544, '11' = channel 1 = 1472.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>Hello|ss11|',
+        'APRS-0',
+      );
+      expect(pkt, isNotNull);
+      expect(pkt!.telemetryReport, isNotNull);
+      expect(pkt.telemetryReport!.sequence, equals('7544'));
+      expect(pkt.telemetryReport!.analog, equals([1472.0]));
+      expect(pkt.telemetryReport!.digital, isEmpty);
+      // The block is stripped from the visible comment.
+      expect(pkt.comment, equals('Hello'));
+    });
+
+    test('parses |ss112233| (3 channels)', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>|ss112233|',
+        'APRS-0',
+      );
+      expect(pkt!.telemetryReport!.analog,
+          equals([1472.0, 1564.0, 1656.0]));
+    });
+
+    test('parses |ss1122334455!"| with binary channel', () {
+      // Spec example: 5 analogs + binary '!"' = 1, so B1=1, others 0.
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>|ss1122334455!"|',
+        'APRS-0',
+      );
+      final t = pkt!.telemetryReport!;
+      expect(t.analog.length, equals(5));
+      expect(t.digital,
+          equals([true, false, false, false, false, false, false, false]));
+    });
+
+    test('|!!!!| minimal block (seq=0, channel=0)', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>|!!!!|',
+        'APRS-0',
+      );
+      expect(pkt!.telemetryReport!.sequence, equals('0'));
+      expect(pkt.telemetryReport!.analog, equals([0.0]));
+    });
+
+    test('malformed block (odd inner length) is left in comment', () {
+      final pkt = AprsPacket.parse(
+        '!4903.50N/07201.75W>|abc|',
+        'APRS-0',
+      );
+      expect(pkt!.telemetryReport, isNull);
+      expect(pkt.comment, equals('|abc|'));
+    });
+  });
 }

@@ -89,6 +89,71 @@ class TelemetryReport {
       comment: comment,
     );
   }
+
+  /// Parse a Base91-encoded telemetry block carried in the COMMENT
+  /// field of any position packet (spec §13 "APRS Base91 Comment
+  /// Telemetry"). Format: `|...|` where the body is pairs of
+  /// printable Base91 digits (each digit = ASCII char minus 33,
+  /// giving 0..90; pairs combine to 0..8280).
+  ///
+  /// Layout inside the delimiters:
+  ///   • 2 bytes — sequence counter (0..8280)
+  ///   • 2 bytes × 1..5 — analog channels
+  ///   • 2 bytes (optional) — packed 8 binary channels (LSB = B1)
+  ///
+  /// Returns null when [body] doesn't include a well-formed `|...|`
+  /// block. Returns a tuple of `(TelemetryReport, untouchedComment)`
+  /// where the comment has the block stripped out — caller should
+  /// store both. Spec §13 states the block MUST appear after the
+  /// user comment but before any DAO / Mic-E type codes; we just
+  /// take the first match.
+  static (TelemetryReport, String)? tryParseBase91(String comment) {
+    if (comment.length < 6) return null;
+    final start = comment.indexOf('|');
+    if (start < 0) return null;
+    final end = comment.indexOf('|', start + 1);
+    if (end < 0 || end == start + 1) return null;
+    final inner = comment.substring(start + 1, end);
+    // Must be even length, 4..14 bytes (seq + 1..5 analogs +
+    // optional digital).
+    if (inner.length < 4 || inner.length > 14 || inner.length.isOdd) {
+      return null;
+    }
+    // All chars must be printable Base91 (33..123).
+    for (var i = 0; i < inner.length; i++) {
+      final c = inner.codeUnitAt(i);
+      if (c < 33 || c > 123) return null;
+    }
+    int decode2(int idx) =>
+        (inner.codeUnitAt(idx) - 33) * 91 + (inner.codeUnitAt(idx + 1) - 33);
+
+    final seqVal = decode2(0);
+    final pairs = (inner.length - 2) ~/ 2;
+    final analog = <double>[];
+    final analogPairs = pairs > 5 ? 5 : pairs;
+    for (var i = 0; i < analogPairs; i++) {
+      analog.add(decode2(2 + i * 2).toDouble());
+    }
+    var digital = <bool>[];
+    if (pairs > 5) {
+      // Pair past the 5 analog ones is the binary channel.
+      final bin = decode2(2 + 5 * 2);
+      for (var b = 0; b < 8; b++) {
+        digital.add((bin & (1 << b)) != 0);
+      }
+    }
+
+    final stripped =
+        comment.substring(0, start) + comment.substring(end + 1);
+    return (
+      TelemetryReport(
+        sequence: seqVal.toString(),
+        analog: analog,
+        digital: digital,
+      ),
+      stripped,
+    );
+  }
 }
 
 /// Telemetry parameter / unit / equation / bit-sense definitions

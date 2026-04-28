@@ -594,6 +594,7 @@ class AprsPacket {
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(informationField);
     _maybeParseWeatherInComment();
+    _maybeParseBase91Telemetry();
   }
 
   /// Spec §12 says the four position DTIs (`!`, `=`, `/`, `@`) may
@@ -774,6 +775,19 @@ class AprsPacket {
     // all that can be left is a comment
     comment = _parsePositionAndSymbol(psr);
     _maybeParseWeatherInComment();
+    _maybeParseBase91Telemetry();
+  }
+
+  /// Spec §13 "APRS Base91 Comment Telemetry": a `|...|` block in the
+  /// comment field carries telemetry on any of the 3 position
+  /// formats. If found, populate [telemetryReport] and strip the
+  /// block out of the comment.
+  void _maybeParseBase91Telemetry() {
+    if (comment.isEmpty || telemetryReport != null) return;
+    final result = TelemetryReport.tryParseBase91(comment);
+    if (result == null) return;
+    telemetryReport = result.$1;
+    comment = result.$2;
   }
 
   /// Query packet (`?`) — spec §15.
