@@ -1,5 +1,6 @@
 import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../core/data_broker.dart';
@@ -26,7 +27,22 @@ class _AprsScreenState extends State<AprsScreen> {
   bool _isTransmitting = false;
   bool _isConnected = false;
   int _rssi = 0; // 0–15 S-meter scale from HtStatus
-  int? _selectedEntryIndex;
+  /// Set of selected feed indices. Multi-select works like a file
+  /// browser: click selects one, shift+click extends from the anchor
+  /// to the clicked row.
+  final Set<int> _selectedEntryIndices = <int>{};
+  /// Anchor for shift-range selection — index of the last "primary"
+  /// click. Resets when the feed shrinks past it or selection is
+  /// cleared.
+  int? _selectionAnchor;
+
+  /// Fraction of the available horizontal space taken by the map
+  /// pane. Drives the resizable splitter between the feed panel
+  /// (left) and the map (right). Clamped to [0.15, 0.85] so neither
+  /// pane can be dragged completely closed. Default 0.4 ≈ the prior
+  /// 3:2 flex ratio.
+  double _mapWidthFraction = 0.4;
+  static const double _splitterWidth = 8;
   final MapController _mapController = MapController();
   String _selectedRoute = 'WIDE1-1,WIDE2-1';
   final TextEditingController _destinationController = TextEditingController();
@@ -112,11 +128,27 @@ class _AprsScreenState extends State<AprsScreen> {
     });
   }
 
-  /// Click handler for an APRS table row. Selects the row and, if the
-  /// underlying packet has valid lat/lon, recentres + zooms the map
-  /// onto that station's marker.
+  /// Click handler for an APRS table row. Click = single-select
+  /// replace; Shift+click = extend the selection from the anchor.
+  /// Map auto-centers only when exactly one row remains selected
+  /// (so shift-selecting a range doesn't bounce the map around).
   void _onAprsRowSelected(int index) {
-    setState(() => _selectedEntryIndex = index);
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    setState(() {
+      if (shift && _selectionAnchor != null) {
+        final lo = _selectionAnchor! < index ? _selectionAnchor! : index;
+        final hi = _selectionAnchor! < index ? index : _selectionAnchor!;
+        _selectedEntryIndices
+          ..clear()
+          ..addAll([for (var i = lo; i <= hi; i++) i]);
+      } else {
+        _selectedEntryIndices
+          ..clear()
+          ..add(index);
+        _selectionAnchor = index;
+      }
+    });
+    if (_selectedEntryIndices.length != 1) return;
     if (index < 0 || index >= _entries.length) return;
     final entry = _entries[index];
     final pos = entry.packet.position;
@@ -126,6 +158,12 @@ class _AprsScreenState extends State<AprsScreen> {
     if (lat == 0 && lon == 0) return;
     _mapController.move(LatLng(lat, lon), 14);
   }
+
+  /// Index of the single selected row, or null when 0 or many are
+  /// selected. The decode panel + map markers use this so they only
+  /// react when there's an unambiguous "current" row.
+  int? get _singleSelectedIndex =>
+      _selectedEntryIndices.length == 1 ? _selectedEntryIndices.first : null;
 
   // ── APRS message send ─────────────────────────────────────────────
 
@@ -316,35 +354,39 @@ class _AprsScreenState extends State<AprsScreen> {
         Expanded(
           child: Padding(
             padding: const EdgeInsets.all(10),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // --- Left column (flex 3) ---
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    children: [
-                      // Frequency monitor panel
-                      _buildFrequencyPanel(colors, sectionStyle),
-                      const SizedBox(height: 10),
-                      // Live APRS Feed
-                      Expanded(
-                        child: _buildFeedPanel(colors, sectionStyle),
-                      ),
-                      const SizedBox(height: 10),
-                      // Transmit bar
-                      _buildTransmitBar(colors),
-                    ],
+            child: LayoutBuilder(builder: (context, constraints) {
+              // Reserve splitter; clamp the map fraction to keep
+              // both panes usable.
+              final total = constraints.maxWidth;
+              final mapFrac = _mapWidthFraction.clamp(0.15, 0.85);
+              final leftWidth =
+                  (total - _splitterWidth) * (1 - mapFrac);
+              final rightWidth = (total - _splitterWidth) * mapFrac;
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  SizedBox(
+                    width: leftWidth,
+                    child: Column(
+                      children: [
+                        _buildFrequencyPanel(colors, sectionStyle),
+                        const SizedBox(height: 10),
+                        Expanded(
+                          child: _buildFeedPanel(colors, sectionStyle),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildTransmitBar(colors),
+                      ],
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                // --- Right column (flex 2): full-height map ---
-                Expanded(
-                  flex: 2,
-                  child: _buildMapPlaceholder(colors, sectionStyle),
-                ),
-              ],
-            ),
+                  _buildSplitter(colors, total),
+                  SizedBox(
+                    width: rightWidth,
+                    child: _buildMapPlaceholder(colors, sectionStyle),
+                  ),
+                ],
+              );
+            }),
           ),
         ),
         StatusStrip(
@@ -492,6 +534,41 @@ class _AprsScreenState extends State<AprsScreen> {
     );
   }
 
+  /// Draggable splitter between the feed/transmit column and the map
+  /// pane. Drag horizontally to grow / shrink the map; the cursor
+  /// changes to a resize chevron on hover.
+  Widget _buildSplitter(ColorScheme colors, double totalWidth) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeColumn,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onHorizontalDragUpdate: (details) {
+          if (totalWidth <= _splitterWidth) return;
+          // Convert pixel delta into a fraction delta. Negative dx
+          // moves the splitter left → map grows.
+          final delta = details.delta.dx / (totalWidth - _splitterWidth);
+          setState(() {
+            _mapWidthFraction =
+                (_mapWidthFraction - delta).clamp(0.15, 0.85);
+          });
+        },
+        child: SizedBox(
+          width: _splitterWidth,
+          child: Center(
+            child: Container(
+              width: 2,
+              margin: const EdgeInsets.symmetric(vertical: 8),
+              decoration: BoxDecoration(
+                color: colors.outlineVariant,
+                borderRadius: BorderRadius.circular(1),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // ---------------------------------------------------------------------------
   // Live APRS Feed panel
   // ---------------------------------------------------------------------------
@@ -501,8 +578,8 @@ class _AprsScreenState extends State<AprsScreen> {
       child: Stack(
         children: [
           _buildFeedPanelBody(colors, sectionStyle),
-          if (_selectedEntryIndex != null &&
-              _selectedEntryIndex! < _entries.length)
+          if (_singleSelectedIndex != null &&
+              _singleSelectedIndex! < _entries.length)
             Positioned(
               top: 12,
               right: 12,
@@ -524,12 +601,18 @@ class _AprsScreenState extends State<AprsScreen> {
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
             child: Row(
               children: [
-                Text(
-                  'LIVE APRS FEED',
-                  style:
-                      sectionStyle.copyWith(color: colors.onSurfaceVariant),
+                // Title takes whatever room is left after the trailing
+                // controls; ellipsizes when the feed panel is narrowed
+                // via the splitter.
+                Expanded(
+                  child: Text(
+                    'LIVE APRS FEED',
+                    overflow: TextOverflow.ellipsis,
+                    style:
+                        sectionStyle.copyWith(color: colors.onSurfaceVariant),
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 SizedBox(
                   height: 22,
                   child: Row(
@@ -637,7 +720,7 @@ class _AprsScreenState extends State<AprsScreen> {
                         _typeColor(entry.packet.dataType.name);
 
                     return DataRow(
-                      selected: _selectedEntryIndex == index,
+                      selected: _selectedEntryIndices.contains(index),
                       onSelectChanged: (_) => _onAprsRowSelected(index),
                       cells: [
                       DataCell(Row(
@@ -689,9 +772,9 @@ class _AprsScreenState extends State<AprsScreen> {
   // APRS row. Mirrors the Packets pane decode panel so users can see
   // the full message body without truncation.
   Widget _buildAprsDecodePanel(ColorScheme colors, TextStyle sectionStyle) {
-    final entry = (_selectedEntryIndex != null &&
-            _selectedEntryIndex! < _entries.length)
-        ? _entries[_selectedEntryIndex!]
+    final idx = _singleSelectedIndex;
+    final entry = (idx != null && idx < _entries.length)
+        ? _entries[idx]
         : null;
     return GlassCard(
       child: Column(
@@ -706,7 +789,10 @@ class _AprsScreenState extends State<AprsScreen> {
                 ),
               ),
               InkWell(
-                onTap: () => setState(() => _selectedEntryIndex = null),
+                onTap: () => setState(() {
+                  _selectedEntryIndices.clear();
+                  _selectionAnchor = null;
+                }),
                 borderRadius: BorderRadius.circular(4),
                 child: Padding(
                   padding: const EdgeInsets.all(2),
@@ -785,40 +871,64 @@ class _AprsScreenState extends State<AprsScreen> {
   Widget _buildAprsMap(ColorScheme colors) {
     // Collect the latest position fix per callsign — APRS stations
     // typically beacon the same position multiple times, so dedupe
-    // by callsign and keep the most recent valid coordinate.
-    final byCallsign = <String, AprsEntry>{};
-    for (final e in _entries) {
+    // by callsign and keep the most recent valid coordinate. Also
+    // remember the source feed index so a marker tap can highlight
+    // the corresponding packet on the left.
+    final byCallsign = <String, _MarkerEntry>{};
+    for (var i = 0; i < _entries.length; i++) {
+      final e = _entries[i];
       final pos = e.packet.position;
       if (!pos.isValid) continue;
       final lat = pos.coordinateSet.latitude.value;
       final lon = pos.coordinateSet.longitude.value;
       if (lat == 0 && lon == 0) continue;
       final call = e.from.isNotEmpty ? e.from : e.to;
-      byCallsign[call] = e;
+      byCallsign[call] = _MarkerEntry(entry: e, feedIndex: i);
     }
 
     final markers = byCallsign.entries.map((kv) {
-      final pos = kv.value.packet.position.coordinateSet;
+      final m = kv.value;
+      final pos = m.entry.packet.position.coordinateSet;
+      final isHighlighted =
+          _selectedEntryIndices.contains(m.feedIndex);
       return Marker(
         point: LatLng(pos.latitude.value, pos.longitude.value),
         width: 64,
         height: 36,
         alignment: Alignment.topCenter,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.location_on, size: 18, color: colors.primary),
-            Text(
-              kv.key,
-              style: TextStyle(
-                fontSize: 8,
-                fontWeight: FontWeight.w600,
-                color: colors.onSurface,
+        child: GestureDetector(
+          // Marker tap → highlight that station's most-recent packet
+          // in the feed. Single-select replaces any prior selection.
+          onTap: () {
+            setState(() {
+              _selectedEntryIndices
+                ..clear()
+                ..add(m.feedIndex);
+              _selectionAnchor = m.feedIndex;
+            });
+          },
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.location_on,
+                size: isHighlighted ? 24 : 18,
+                color: isHighlighted ? colors.tertiary : colors.primary,
               ),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 1,
-            ),
-          ],
+              Text(
+                kv.key,
+                style: TextStyle(
+                  fontSize: 8,
+                  fontWeight: FontWeight.w600,
+                  color: isHighlighted
+                      ? colors.tertiary
+                      : colors.onSurface,
+                ),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+              ),
+            ],
+          ),
         ),
       );
     }).toList();
@@ -849,8 +959,22 @@ class _AprsScreenState extends State<AprsScreen> {
             const InteractionOptions(flags: InteractiveFlag.all),
       ),
       children: [
+        // Match map tiles to the app theme. CartoDB Dark Matter is
+        // the de-facto choice for dark UIs riding on OSM data; light
+        // theme falls back to the canonical OSM tile server.
+        // The {r} placeholder pulls @2x tiles when the display is
+        // high-density (Retina Macs); RetinaMode.isHighDensity
+        // toggles it automatically.
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: Theme.of(context).brightness == Brightness.dark
+              ? 'https://{s}.basemaps.cartocdn.com/dark_all/'
+                  '{z}/{x}/{y}{r}.png'
+              : 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          subdomains:
+              Theme.of(context).brightness == Brightness.dark
+                  ? const ['a', 'b', 'c', 'd']
+                  : const [],
+          retinaMode: RetinaMode.isHighDensity(context),
           userAgentPackageName: 'com.htcommander.htcommanderFlutter',
         ),
         MarkerLayer(markers: markers),
@@ -1124,4 +1248,14 @@ class _AprsScreenState extends State<AprsScreen> {
       ),
     );
   }
+}
+
+/// Internal mapping: a station's most-recent positioned packet plus
+/// its index in the live feed. Used to wire marker taps back to the
+/// feed selection so clicking a map pin highlights the corresponding
+/// packet in the table.
+class _MarkerEntry {
+  final AprsEntry entry;
+  final int feedIndex;
+  const _MarkerEntry({required this.entry, required this.feedIndex});
 }

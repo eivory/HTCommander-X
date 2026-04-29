@@ -1,5 +1,6 @@
 import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show HardwareKeyboard;
 import '../core/data_broker.dart';
 import '../core/data_broker_client.dart';
 import '../handlers/packet_store.dart';
@@ -17,7 +18,34 @@ class PacketsScreen extends StatefulWidget {
 class _PacketsScreenState extends State<PacketsScreen> {
   final DataBrokerClient _broker = DataBrokerClient();
   List<AX25Packet> _packets = [];
-  int? _selectedIndex;
+  /// Multi-select like a file browser: click = single-select, shift+
+  /// click extends from anchor. Decode panel only renders when one
+  /// row is selected.
+  final Set<int> _selectedIndices = <int>{};
+  int? _selectionAnchor;
+
+  /// Index of the single selected row, or null when 0 or many rows
+  /// are selected.
+  int? get _singleSelected =>
+      _selectedIndices.length == 1 ? _selectedIndices.first : null;
+
+  void _selectRow(int i) {
+    final shift = HardwareKeyboard.instance.isShiftPressed;
+    setState(() {
+      if (shift && _selectionAnchor != null) {
+        final lo = _selectionAnchor! < i ? _selectionAnchor! : i;
+        final hi = _selectionAnchor! < i ? i : _selectionAnchor!;
+        _selectedIndices
+          ..clear()
+          ..addAll([for (var k = lo; k <= hi; k++) k]);
+      } else {
+        _selectedIndices
+          ..clear()
+          ..add(i);
+        _selectionAnchor = i;
+      }
+    });
+  }
 
   @override
   void initState() {
@@ -210,7 +238,7 @@ class _PacketsScreenState extends State<PacketsScreen> {
                   rows: List.generate(_packets.length, (k) {
                     final i = _packets.length - 1 - k;
                     final p = _packets[i];
-                    final selected = _selectedIndex == i;
+                    final selected = _selectedIndices.contains(i);
                     final from = p.addresses.length > 1
                         ? p.addresses[1].toString()
                         : '?';
@@ -222,9 +250,7 @@ class _PacketsScreenState extends State<PacketsScreen> {
                       color: selected
                           ? WidgetStateProperty.all(colors.primary.withAlpha(30))
                           : null,
-                      onSelectChanged: (_) {
-                        setState(() => _selectedIndex = i);
-                      },
+                      onSelectChanged: (_) => _selectRow(i),
                       cells: [
                         DataCell(Text(_formatTime(p.time),
                             style: TextStyle(
@@ -256,9 +282,8 @@ class _PacketsScreenState extends State<PacketsScreen> {
   }
 
   Widget _buildDecodePanel(ColorScheme colors) {
-    final packet = _selectedIndex != null && _selectedIndex! < _packets.length
-        ? _packets[_selectedIndex!]
-        : null;
+    final idx = _singleSelected;
+    final packet = idx != null && idx < _packets.length ? _packets[idx] : null;
 
     return GlassCard(
       child: Column(

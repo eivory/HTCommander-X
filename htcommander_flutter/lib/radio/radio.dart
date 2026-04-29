@@ -112,6 +112,62 @@ class _ExtendedCmd {
   static const int devRegistration = 1825;
 }
 
+/// One captured DevStateVar push event — used by the burst-capture
+/// dialog to show the user what the radio just sent so they can
+/// describe what they were doing.
+class DevStateVarEvent {
+  final DateTime time;
+  final int varId;
+  final String varName;
+  final String payloadHex;
+  const DevStateVarEvent({
+    required this.time,
+    required this.varId,
+    required this.varName,
+    required this.payloadHex,
+  });
+}
+
+/// Dispatched on device 1 as `DevStateVarBurst` when ≥3 push events
+/// arrive within a short window. The UI listens and offers the user
+/// a "what were you doing?" capture dialog so we can build a varId
+/// catalog from real-world observation.
+class DevStateVarBurst {
+  final List<DevStateVarEvent> events;
+  const DevStateVarBurst(this.events);
+}
+
+/// Device State Variable IDs delivered by GAIA extended cmd 0x4003
+/// (`getDevStateVar`). Catalog cross-checked against the benlink
+/// reference (khusmann/benlink/src/benlink/protocol/command/dev_state_var.py).
+/// The radio fires these as unsolicited push events when the
+/// corresponding state changes — keypresses, user actions, charger
+/// state, etc. We log them by name now so the next event capture is
+/// readable.
+class _DevStateVar {
+  static const Map<int, String> names = {
+    0: 'START',
+    1: 'RSSI_LOW_THRESHOLD',
+    2: 'RSSI_HIGH_THRESHOLD',
+    3: 'BATTERY_LOW_THRESHOLD',
+    4: 'BATTERY_HIGH_THRESHOLD',
+    5: 'DEVICE_STATE_CHANGED',
+    6: 'PIO_CHANGED',
+    7: 'DEBUG_MESSAGE',
+    8: 'BATTERY_CHARGED',
+    9: 'CHARGER_CONNECTION',
+    10: 'CAPSENSE_UPDATE',
+    11: 'USER_ACTION',
+    12: 'SPEECH_RECOGNITION',
+    13: 'AV_COMMAND',
+    14: 'REMOTE_BATTERY_LEVEL',
+    15: 'KEY',
+    16: 'DFU_STATE',
+    17: 'UART_RECEIVED_DATA',
+    18: 'VMU_PACKET',
+  };
+}
+
 /// GAIA notification types.
 class _Notification {
   static const int htStatusChanged = 1;
@@ -234,6 +290,22 @@ class Radio {
   // GPS state
   bool _gpsEnabled = false;
   int _gpsLock = 2;
+
+  // TEMPORARY-DIAGNOSTIC: DevStateVar burst tracking.
+  // Remove this state + _recordDevStateEvent + the broker dispatch
+  // once the DevStateVar (GAIA 0x4003) catalog is fully understood.
+  // Sister code in lib/dialogs/dev_state_capture_dialog.dart and the
+  // AppShell subscription in lib/app.dart should come out together.
+  // The radio occasionally fires a burst of unsolicited 0x4003 events
+  // (April 27 ~20:58: 8 events in ~3 seconds). When that pattern
+  // repeats, we ask the user via the capture dialog what they were
+  // doing on the radio so we can build a varId catalog from real
+  // observation.
+  final List<DevStateVarEvent> _recentDevStateEvents = [];
+  static const Duration _devStateBurstWindow = Duration(seconds: 5);
+  static const int _devStateBurstThreshold = 3;
+  static const Duration _devStateBurstCooldown = Duration(seconds: 30);
+  DateTime? _lastDevStateBurstNotifiedAt;
 
   // Lock state
   RadioLockState? _lockState;
@@ -479,6 +551,14 @@ class Radio {
           _sendCommandInt(_CommandGroup.basic, _BasicCmd.registerNotification,
               _Notification.positionChange);
         }
+        // KNOWN: GAIA extended cmd 0x4003 (GET_DEV_STATE_VAR) is
+        // RX-only on the UV-PRO. Sending a query for any varId
+        // (0..18 from the standard DevStateVar enum) returns a
+        // 5-byte error response with status 0x05 = INVALID_PARAMETER.
+        // The radio occasionally pushes these events unsolicited
+        // (observed: a burst on 27-Apr 20:58 — origin still unknown).
+        // _handleExtendedCommand logs the body when they arrive so
+        // we can decode by observation.
         break;
 
       case _BasicCmd.readRfCh:
@@ -767,7 +847,75 @@ class Radio {
 
   void _handleExtendedCommand(Uint8List value) {
     final xcmd = BinaryUtils.getShort(value, 2) & 0x7FFF;
-    debug('Unexpected Extended Command: $xcmd');
+    // 0x4003 (16387) = GET_DEV_STATE_VAR. Defined in our extended-cmd
+    // enum but never sent by us — the radio fires these unsolicited
+    // as device-state-change events (likely tied to varId bytes for
+    // volume / channel / button events). Body layout per observation
+    // is `varId` byte at value[4] followed by N value bytes; until
+    // we have a complete catalog of varIds we just log the raw body
+    // so the next observed event can be decoded by hand.
+    if (xcmd == _ExtendedCmd.getDevStateVar) {
+      // Body layout (post-GAIA-header):
+      //   value[4]   = status (0 on push, non-zero on error response)
+      //   value[5]   = varId (DevStateVar enum) — only valid when
+      //                status is 0 and the body is long enough
+      //   value[6+]  = payload (varId-specific)
+      // Error responses are 5 bytes total ending in a 1-byte status
+      // (e.g. 0x05 = INVALID_PARAMETER). Skip those silently — they
+      // only happen if we send a query, and we don't.
+      if (value.length == 5) {
+        // Quiet: we don't actively query, so an error reply is just
+        // a stray packet. If you see this in logs, something else is
+        // sending getDevStateVar requests.
+        return;
+      }
+      if (value.length >= 6) {
+        final varId = value[5];
+        final name = _DevStateVar.names[varId] ?? 'unknown($varId)';
+        final payload = value.length > 6
+            ? BinaryUtils.bytesToHex(value.sublist(6))
+            : '';
+        debug('DevStateVar event: $name payload=$payload');
+        _recordDevStateEvent(DevStateVarEvent(
+          time: DateTime.now(),
+          varId: varId,
+          varName: name,
+          payloadHex: payload,
+        ));
+      } else {
+        debug('DevStateVar push: short body '
+            '(${value.length} bytes) ${BinaryUtils.bytesToHex(value)}');
+      }
+      return;
+    }
+    debug('Unexpected Extended Command: $xcmd '
+        'body=${value.length > 4 ? BinaryUtils.bytesToHex(value.sublist(4)) : ""}');
+  }
+
+  /// Append [event] to the rolling DevStateVar window and dispatch a
+  /// [DevStateVarBurst] on device 1 when ≥ [_devStateBurstThreshold]
+  /// events have arrived inside [_devStateBurstWindow]. A cooldown
+  /// suppresses repeated dialogs for the same burst.
+  void _recordDevStateEvent(DevStateVarEvent event) {
+    final now = event.time;
+    _recentDevStateEvents
+      ..add(event)
+      ..removeWhere(
+          (e) => now.difference(e.time) > _devStateBurstWindow);
+    if (_recentDevStateEvents.length < _devStateBurstThreshold) return;
+
+    final lastNotified = _lastDevStateBurstNotifiedAt;
+    if (lastNotified != null &&
+        now.difference(lastNotified) < _devStateBurstCooldown) {
+      return;
+    }
+    _lastDevStateBurstNotifiedAt = now;
+    _broker.dispatch(
+      1,
+      'DevStateVarBurst',
+      DevStateVarBurst(List<DevStateVarEvent>.from(_recentDevStateEvents)),
+      store: false,
+    );
   }
 
   // ── Channel Management ─────────────────────────────────────────────

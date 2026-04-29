@@ -25,6 +25,7 @@ import 'screens/aprs_screen.dart';
 import 'screens/map_screen.dart';
 import 'screens/debug_screen.dart';
 import 'screens/settings_screen.dart';
+import 'dialogs/dev_state_capture_dialog.dart';
 
 class HTCommanderApp extends StatelessWidget {
   const HTCommanderApp({super.key});
@@ -140,8 +141,24 @@ class _AppShellState extends State<AppShell> {
     _broker.subscribe(1, 'McpDisconnectRadio', _onMcpDisconnect);
     _broker.subscribe(1, 'McpNavigateTo', _onMcpNavigate);
 
+    // TEMPORARY-DIAGNOSTIC: remove once the DevStateVar (GAIA 0x4003)
+    // catalog is fully understood. Sister code in radio.dart and
+    // dialogs/dev_state_capture_dialog.dart comes out at the same
+    // time. Burst-capture asks the user what they were doing on the
+    // radio so we can build a varId catalog from real observation.
+    _broker.subscribe(1, 'DevStateVarBurst', _onDevStateVarBurst);
+
     // Publish initial screen
     DataBroker.dispatch(1, 'CurrentScreen', 'communication');
+  }
+
+  void _onDevStateVarBurst(int deviceId, String name, Object? data) {
+    if (!mounted || data is! ht.DevStateVarBurst) return;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => DevStateCaptureDialog(burst: data),
+    );
   }
 
   void _initPlatformServices() {
