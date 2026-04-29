@@ -1,139 +1,120 @@
 # HTCommander-X
 
-> Cross-platform fork of [HTCommander](https://github.com/Ylianst/HTCommander)
-> by Ylian Saint-Hilaire — adding Linux support and an Avalonia-based UI.
+> **Work in progress.** This is an active port of [HTCommander](https://github.com/Ylianst/HTCommander) by Ylian Saint-Hilaire from C#/Avalonia to Flutter/Dart with native platform plugins for Linux, Windows, and macOS. Many features are partial or in flight. Expect bugs, incomplete platform parity, and breakage between commits. Misuse could brick the radio. Use at your own risk.
 
 ![HTCommander-X screenshot](docs/images/htcommander-x.png)
 
-> **Note:** This software is still an early beta. Expect bugs and missing features. Use at your own risk — usage could potentially brick your radio. Use with caution.
+## What this fork adds over upstream
 
-### What's new in HTCommander-X
+- Cross-platform UI built on Flutter, replacing both the original WinForms and the Avalonia interim port. The Avalonia branch is preserved at `origin/avalonia` for reference.
+- macOS support with a native Swift backend: `CoreBluetooth` for BLE/GAIA control, `IOBluetooth` RFCOMM for audio, `AVAudioEngine` for output and microphone capture, BlueZ `libsbc` vendored for SBC encode and decode. No Python, PortAudio, or sounddevice dependency.
+- Linux backend in Dart with `dart:ffi` over libc for RFCOMM sockets, `paplay` and `parecord` for audio I/O, espeak-ng for TTS, and optional whisper-cli for STT.
+- Windows backend in Dart with `dart:ffi` over Winsock2 for RFCOMM, `waveOut` and `waveIn` for audio, System.Speech for TTS, and optional whisper-cli for STT.
+- APRS implementation audited against the [wb2osz/aprsspec](https://github.com/wb2osz/aprsspec) v1.2c document. Coverage of sections 6 through 17 includes status reports, the REPLY-ACK extension, object and item reports, telemetry (T# data plus PARM, UNIT, EQNS, BITS definitions, plus Base91 comment telemetry), uncompressed position transmission, weather (positionless and position-with-symbol forms), PHG / RNG / DFS data extensions, position ambiguity, station capabilities, queries, raw GPS, and DF Bearing/NRQ.
+- Communication pane refresh: VFO A/B displays with active-slot indicator, channel-group switcher (six 30-channel groups), VFO-to-channel and channel-to-VFO transitions, audio level controls (volume, squelch, output, mute, mic gain), confirmation prompt before overwriting a saved channel slot.
+- APRS pane refresh: resizable splitter between the feed and the map, dark-mode OpenStreetMap tiles via CartoDB Dark Matter, marker tap to highlight the corresponding feed packet, shift-click multi-select on the feed and packet tables.
+- MCP (Model Context Protocol) server for AI-assisted control and inspection from clients such as Claude Code.
 
-- **Cross-platform** — runs on Linux and Windows
-- **Avalonia UI** replaces WinForms, with Light / Dark / Auto themes
-- **Linux Bluetooth** via native RFCOMM sockets + BlueZ D-Bus discovery
-- **Linux audio** via PortAudio output + parecord mic capture, espeak-ng TTS
+## Status by platform
 
-### Download & Install
+| Platform | UI    | Bluetooth                       | Audio                          | Notes                                                                 |
+|----------|-------|---------------------------------|--------------------------------|-----------------------------------------------------------------------|
+| macOS    | Yes   | CoreBluetooth + IOBluetooth     | AVAudioEngine + libsbc         | Pair the radio in System Settings before launch.                      |
+| Linux    | Yes   | dart:ffi RFCOMM + BlueZ D-Bus   | paplay / parecord              | espeak-ng TTS, optional whisper-cli STT.                              |
+| Windows  | Yes   | Winsock2 RFCOMM via dart:ffi    | waveOut / waveIn               | System.Speech TTS, optional whisper-cli STT.                          |
+| Android  | Partial | Stub                          | Stub                           | Compiles, transport not yet wired.                                    |
 
-Download the latest release from the [Releases page](https://github.com/dikei100/HTCommander-X/releases/latest).
+## Building from source
 
-**Linux (AppImage)** — works on any distro, no installation needed:
-```bash
-chmod +x HTCommander-X-x86_64.AppImage
-./HTCommander-X-x86_64.AppImage
-```
-
-**Debian / Ubuntu:**
-```bash
-sudo dpkg -i htcommander_*_amd64.deb
-htcommander
-```
-
-**Fedora:**
-```bash
-sudo rpm -i htcommander-*.x86_64.rpm
-htcommander
-```
-
-**Arch Linux:**
-```bash
-sudo pacman -U htcommander-*.pkg.tar.zst
-htcommander
-```
-
-**Windows:**
-Extract `HTCommander-X-win-x64.zip` and run `HTCommander.Desktop.exe`.
-
-### External Software Integration (Windows)
-
-HTCommander-X can interface with external ham radio software (fldigi, WSJT-X, VaraFM, Direwolf, etc.) for digital modes and other applications. On Linux, virtual serial ports and audio devices are created automatically. On Windows, third-party drivers are required:
-
-**Rigctld (TCP) — no extra software needed**
-Most ham software supports the rigctld TCP protocol for radio control. Enable it in Settings > Servers. This works out of the box on all platforms — no additional installation required.
-
-**Virtual COM Ports — for software that requires serial CAT control (e.g. VaraFM)**
-
-1. Install [com0com](https://com0com.sourceforge.net/) — a free, open-source virtual null-modem driver
-2. Use the com0com setup utility to create a virtual COM port pair (e.g. COM10 ↔ COM11)
-3. In HTCommander-X Settings > Servers, enable the CAT Server and select one port of the pair (e.g. COM10)
-4. In your external software, configure the other port of the pair (e.g. COM11) as the CAT/radio port
-
-**Virtual Audio Routing — for software that needs audio I/O with the radio**
-
-Virtual audio devices allow external software to send and receive audio through the radio. This requires [VB-CABLE](https://vb-audio.com/Cable/) by VB-Audio:
-
-1. Install **VB-CABLE A+B** (paid version) — two virtual audio cables are needed: one for RX audio (radio → external software) and one for TX audio (external software → radio)
-2. Configure your external software to use the VB-CABLE devices as audio input/output
-3. Configure HTCommander-X audio routing in Settings > Audio to use the corresponding VB-CABLE devices
-
-Note: The free version of VB-CABLE only provides a single virtual cable, which is not sufficient for bidirectional audio routing. The A+B pack provides the two cables needed.
-
-### AI Integration (MCP Server)
-
-HTCommander-X includes a built-in [MCP](https://modelcontextprotocol.io/) (Model Context Protocol) server that allows AI assistants like [Claude Code](https://claude.com/claude-code) to control the radio and inspect application state programmatically. This enables scenarios like voice-controlled radio operation, automated monitoring, and AI-assisted debugging.
-
-**Enabling the MCP server:**
-
-1. Open Settings > Servers
-2. Check **"Enable MCP Server (AI Control)"**
-3. Set the port (default: 5678)
-4. Optionally check **"Enable debug tools"** for full DataBroker inspection capabilities
-
-**Connecting Claude Code:**
-
-The project includes a `.mcp.json` file that configures Claude Code to connect automatically. When working in the HTCommander-X directory with Claude Code, the MCP tools become available after enabling the server. You can also add the server manually:
+Binary releases of the Flutter version are not yet published. Build from source for now:
 
 ```bash
-claude mcp add htcommander --url http://localhost:5678/
+git clone https://github.com/eivory/HTCommander-X.git
+cd HTCommander-X/htcommander_flutter
+flutter pub get
+flutter run -d macos       # or -d linux, -d windows
 ```
 
-**Available MCP tools:**
-
-| Category | Tools |
-|----------|-------|
-| Radio Queries | `get_connected_radios`, `get_radio_state`, `get_radio_info`, `get_radio_settings`, `get_channels`, `get_gps_position`, `get_battery` |
-| Radio Control | `connect_radio`, `disconnect_radio`, `set_vfo_channel`, `set_volume`, `set_squelch`, `set_audio`, `set_gps`, `send_chat_message` |
-| Debug (opt-in) | `get_logs`, `get_databroker_state`, `get_app_setting`, `set_app_setting`, `dispatch_event` |
-
-**Claude Code Skills:**
-
-Two built-in skills provide guided workflows:
-- `/radio-status` — checks all connected radios and presents a summary
-- `/debug-radio` — inspects logs, state, and connectivity to diagnose issues
-
-**Testing with curl:**
+Release builds:
 
 ```bash
-# Initialize MCP session
-curl -X POST http://localhost:5678/ \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}'
-
-# List available tools
-curl -X POST http://localhost:5678/ \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'
-
-# Get connected radios
-curl -X POST http://localhost:5678/ \
-  -H "Content-Type: application/json" \
-  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"get_connected_radios","arguments":{}}}'
+flutter build macos --release
+flutter build linux --release
+flutter build windows --release
 ```
 
-For full implementation details and removal instructions, see [docs/MCP-Integration.md](docs/MCP-Integration.md).
+The legacy Avalonia/C# release pipeline lives on the `avalonia` branch and continues to publish AppImage, .deb, .rpm, .pkg.tar.zst, and Windows zip artifacts at the [Releases page](https://github.com/dikei100/HTCommander-X/releases/latest). Those builds do not include any Flutter port changes.
 
-### Acknowledgements
+## External Software Integration
 
-- **Ylian Saint-Hilaire** — original [HTCommander](https://github.com/Ylianst/HTCommander) author and maintainer
-- **Kyle Husmann, KC3SLD** — [benlink](https://github.com/khusmann/benlink) Python library for GAIA protocol decoding, RFCOMM channel discovery, and audio codec reference
-- **SarahRoseLives** — [flutter_benlink](https://github.com/SarahRoseLives/flutter_benlink) Flutter/Dart implementation, initialization sequence and VR-N76 quirks reference
-- **Lee, K0QED** — [APRS-Parser](https://github.com/k0qed/aprs-parser)
-- **OpenStreetMap** — [openstreetmap.org](https://openstreetmap.org), free geographic data for the world
+HTCommander-X can act as a bridge between the radio and external ham software (fldigi, WSJT-X, VaraFM, Direwolf, etc.).
 
-### Disclaimer
+### Rigctld TCP
 
-This software is provided "as is", without warranty of any kind. The authors are not liable for any damage to equipment, software, or data resulting from the use of this software. Installation and use is entirely at your own risk.
+Most ham software speaks rigctld over TCP. Enable it under Settings > Servers. Works on all platforms with no additional drivers.
+
+### Linux
+
+Virtual serial ports and audio devices are created automatically.
+
+### Windows
+
+Virtual serial bridges and virtual audio cables require third-party drivers:
+
+- **com0com** for virtual COM ports. Create a port pair (e.g. COM10 and COM11), point the CAT Server at one end, point your external software at the other.
+- **VB-CABLE A+B** (paid) for virtual audio routing. The free single-cable version cannot do bidirectional radio audio. Configure your external software and HTCommander-X audio routing to use the two cables for RX and TX respectively.
+
+### macOS
+
+Virtual serial and virtual audio routing on macOS are not yet wired. The rigctld TCP path works today; for serial-only software, run the Linux or Windows version under a VM.
+
+## AI Integration (MCP Server)
+
+HTCommander-X embeds a [Model Context Protocol](https://modelcontextprotocol.io/) server. AI assistants such as [Claude Code](https://claude.com/claude-code) can connect, inspect application state, and control the radio.
+
+To enable it:
+
+1. Open Settings > Servers.
+2. Check **Enable MCP Server (AI Control)**.
+3. Set the port (default 5678).
+4. Optionally check **Enable debug tools** for full DataBroker inspection.
+
+Connecting Claude Code:
+
+```bash
+claude mcp add htcommander --transport http http://localhost:5678/
+```
+
+The project also ships an `.mcp.json` at the repository root. Claude Code will prompt to approve the project-scoped server on first launch in this directory.
+
+Available tools:
+
+| Category       | Tools                                                                                                                                                                                                       |
+|----------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| Radio queries  | `get_connected_radios`, `get_radio_state`, `get_radio_info`, `get_radio_settings`, `get_channels`, `get_gps_position`, `get_battery`, `get_ht_status`                                                       |
+| Radio control  | `connect_radio`, `disconnect_radio`, `set_vfo_channel`, `set_vfo_frequency`, `write_channel`, `set_volume`, `set_squelch`, `set_audio`, `set_mute`, `set_output_volume`, `set_dual_watch`, `set_scan`, `set_gps`, `set_ptt`, `send_chat_message`, `send_morse`, `send_dtmf`, `set_software_modem` |
+| Debug (opt-in) | `get_logs`, `get_databroker_state`, `get_app_setting`, `set_app_setting`, `dispatch_event`                                                                                                                  |
+
+Built-in skills:
+
+- `/radio-status` reports a live summary across connected radios.
+- `/debug-radio` inspects logs and DataBroker state for connection issues.
+
+For implementation details and removal instructions, see [docs/MCP-Integration.md](docs/MCP-Integration.md).
+
+## Acknowledgements
+
+- Ylian Saint-Hilaire, original [HTCommander](https://github.com/Ylianst/HTCommander) author and maintainer.
+- Kyle Husmann, KC3SLD, [benlink](https://github.com/khusmann/benlink) Python library, GAIA protocol decoding and audio codec reference.
+- SarahRoseLives, [flutter_benlink](https://github.com/SarahRoseLives/flutter_benlink), Flutter/Dart implementation reference.
+- Lee, K0QED, [APRS-Parser](https://github.com/k0qed/aprs-parser).
+- BlueZ project, libsbc (LGPL).
+- John Langner, WB2OSZ, [aprsspec](https://github.com/wb2osz/aprsspec) protocol reference.
+- OpenStreetMap, free geographic data.
+
+## Disclaimer
+
+Provided as-is, without warranty. Authors are not liable for damage to equipment, software, or data resulting from use of this software. Installation and use are entirely at your own risk.
 
 ---
 
